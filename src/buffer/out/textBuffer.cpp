@@ -46,14 +46,26 @@ TextBuffer::TextBuffer(const COORD screenBufferSize,
     _currentHyperlinkId{ 1 },
     _currentPatternId{ 0 }
 {
-    // initialize ROWs
+    const auto dx = static_cast<size_t>(screenBufferSize.X);
+    const auto dy = static_cast<size_t>(screenBufferSize.Y);
+    auto buffer = static_cast<CharRowCell*>(VirtualAlloc(nullptr, dx * dy * sizeof(CharRowCell), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    THROW_IF_NULL_ALLOC(buffer);
+
+    _charBuffer = buffer;
+
     _storage.reserve(static_cast<size_t>(screenBufferSize.Y));
-    for (size_t i = 0; i < static_cast<size_t>(screenBufferSize.Y); ++i)
+    for (SHORT i = 0; i < screenBufferSize.Y; ++i)
     {
-        _storage.emplace_back(static_cast<SHORT>(i), screenBufferSize.X, _currentAttributes, this);
+        _storage.emplace_back(i, buffer, screenBufferSize.X, _currentAttributes, this);
+        buffer += dx;
     }
 
     _UpdateSize();
+}
+
+TextBuffer::~TextBuffer()
+{
+    VirtualFree(_charBuffer, 0, MEM_RELEASE);
 }
 
 // Routine Description:
@@ -88,11 +100,9 @@ UINT TextBuffer::TotalRowCount() const noexcept
 // - const reference to the requested row. Asserts if out of bounds.
 const ROW& TextBuffer::GetRowByOffset(const size_t index) const
 {
-    const size_t totalRows = TotalRowCount();
-
     // Rows are stored circularly, so the index you ask for is offset by the start position and mod the total of rows.
-    const size_t offsetIndex = (_firstRow + index) % totalRows;
-    return _storage.at(offsetIndex);
+    const size_t offsetIndex = (_firstRow + index) % _storage.size();
+    return _storage[offsetIndex];
 }
 
 // Routine Description:
@@ -104,11 +114,9 @@ const ROW& TextBuffer::GetRowByOffset(const size_t index) const
 // - reference to the requested row. Asserts if out of bounds.
 ROW& TextBuffer::GetRowByOffset(const size_t index)
 {
-    const size_t totalRows = TotalRowCount();
-
     // Rows are stored circularly, so the index you ask for is offset by the start position and mod the total of rows.
-    const size_t offsetIndex = (_firstRow + index) % totalRows;
-    return _storage.at(offsetIndex);
+    const size_t offsetIndex = (_firstRow + index) % _storage.size();
+    return _storage[offsetIndex];
 }
 
 // Routine Description:
@@ -405,7 +413,7 @@ OutputCellIterator TextBuffer::WriteLine(const OutputCellIterator givenIt,
 //Return Value:
 // - true if we successfully inserted the character
 // - false otherwise (out of memory)
-bool TextBuffer::InsertCharacter(const std::wstring_view chars,
+bool TextBuffer::InsertCharacter(const std::wstring_view& chars,
                                  const DbcsAttribute dbcsAttribute,
                                  const TextAttribute attr)
 {
@@ -786,7 +794,7 @@ void TextBuffer::ScrollRows(const SHORT firstRow, const SHORT size, const SHORT 
 
     // Renumber the IDs now that we've rearranged where the rows sit within the buffer.
     // Refreshing should also delegate to the UnicodeStorage to re-key all the stored unicode sequences (where applicable).
-    _RefreshRowIDs(std::nullopt);
+    _RefreshRowIDs(_size.Width());
 }
 
 Cursor& TextBuffer::GetCursor() noexcept
@@ -904,6 +912,11 @@ void TextBuffer::Reset()
 {
     RETURN_HR_IF(E_INVALIDARG, newSize.X < 0 || newSize.Y < 0);
 
+    const auto dx = static_cast<size_t>(newSize.X);
+    const auto dy = static_cast<size_t>(newSize.Y);
+    auto buffer = static_cast<CharRowCell*>(VirtualAlloc(nullptr, dx * dy * sizeof(CharRowCell), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    RETURN_IF_NULL_ALLOC(buffer);
+
     try
     {
         const auto currentSize = GetSize().Dimensions();
@@ -917,12 +930,7 @@ void TextBuffer::Reset()
         const SHORT TopRowIndex = (GetFirstRowIndex() + TopRow) % currentSize.Y;
 
         // rotate rows until the top row is at index 0
-        for (int i = 0; i < TopRowIndex; i++)
-        {
-            _storage.emplace_back(std::move(_storage.front()));
-            _storage.erase(_storage.begin());
-        }
-
+        std::rotate(_storage.begin(), _storage.begin() + TopRowIndex, _storage.end());
         _SetFirstRowIndex(0);
 
         // realloc in the Y direction
@@ -934,19 +942,26 @@ void TextBuffer::Reset()
         // add rows if we're growing
         while (_storage.size() < static_cast<size_t>(newSize.Y))
         {
-            _storage.emplace_back(static_cast<short>(_storage.size()), newSize.X, attributes, this);
+            _storage.emplace_back(static_cast<short>(_storage.size()), nullptr, newSize.X, attributes, this);
         }
 
         // Now that we've tampered with the row placement, refresh all the row IDs.
         // Also take advantage of the row ID refresh loop to resize the rows in the X dimension
         // and cleanup the UnicodeStorage characters that might fall outside the resized buffer.
         _RefreshRowIDs(newSize.X);
+        _RefreshRowWidth(buffer, newSize.X);
 
         // Update the cached size value
         _UpdateSize();
     }
-    CATCH_RETURN();
+    catch (...)
+    {
+        VirtualFree(buffer, 0, MEM_RELEASE);
+        RETURN_CAUGHT_EXCEPTION();
+    };
 
+    VirtualFree(_charBuffer, 0, MEM_RELEASE);
+    _charBuffer = buffer;
     return S_OK;
 }
 
@@ -1032,7 +1047,7 @@ void TextBuffer::TriggerNewTextNotification(const std::wstring_view newText)
 //   any high unicode (UnicodeStorage) runs while we're already looping through the rows.
 // Arguments:
 // - newRowWidth - Optional new value for the row width.
-void TextBuffer::_RefreshRowIDs(std::optional<SHORT> newRowWidth)
+void TextBuffer::_RefreshRowIDs(SHORT width)
 {
     std::unordered_map<SHORT, SHORT> rowMap;
     SHORT i = 0;
@@ -1046,17 +1061,19 @@ void TextBuffer::_RefreshRowIDs(std::optional<SHORT> newRowWidth)
 
         // Also update the char row parent pointers as they can get shuffled up in the rotates.
         it.GetCharRow().UpdateParent(&it);
-
-        // Resize the rows in the X dimension if we have a new width
-        if (newRowWidth.has_value())
-        {
-            // Realloc in the X direction
-            THROW_IF_FAILED(it.Resize(newRowWidth.value()));
-        }
     }
 
     // Give the new mapping to Unicode Storage
-    _unicodeStorage.Remap(rowMap, newRowWidth);
+    _unicodeStorage.Remap(rowMap, width);
+}
+
+void TextBuffer::_RefreshRowWidth(CharRowCell *data, size_t width) noexcept
+{
+    for (auto& it : _storage)
+    {
+        it.GetCharRow().Resize(data, width);
+        data += width;
+    }
 }
 
 // Routine Description:
@@ -1099,7 +1116,7 @@ ROW& TextBuffer::_GetPrevRowNoWrap(const ROW& Row)
 // - wordDelimiters: the delimiters defined as a part of the DelimiterClass::DelimiterChar
 // Return Value:
 // - the delimiter class for the given char
-const DelimiterClass TextBuffer::_GetDelimiterClassAt(const COORD pos, const std::wstring_view wordDelimiters) const
+const DelimiterClass TextBuffer::_GetDelimiterClassAt(const COORD pos, const std::wstring_view& wordDelimiters) const
 {
     return GetRowByOffset(pos.Y).GetCharRow().DelimiterClassAt(pos.X, wordDelimiters);
 }
@@ -1165,7 +1182,7 @@ const COORD TextBuffer::GetWordStart(const COORD target, const std::wstring_view
 // - wordDelimiters - what characters are we considering for the separation of words
 // Return Value:
 // - The COORD for the first character on the current/previous READABLE "word" (inclusive)
-const COORD TextBuffer::_GetWordStartForAccessibility(const COORD target, const std::wstring_view wordDelimiters) const
+const COORD TextBuffer::_GetWordStartForAccessibility(const COORD target, const std::wstring_view& wordDelimiters) const
 {
     COORD result = target;
     const auto bufferSize = GetSize();
@@ -1210,7 +1227,7 @@ const COORD TextBuffer::_GetWordStartForAccessibility(const COORD target, const 
 // - wordDelimiters - what characters are we considering for the separation of words
 // Return Value:
 // - The COORD for the first character on the current word or delimiter run (stopped by the left margin)
-const COORD TextBuffer::_GetWordStartForSelection(const COORD target, const std::wstring_view wordDelimiters) const
+const COORD TextBuffer::_GetWordStartForSelection(const COORD target, const std::wstring_view& wordDelimiters) const
 {
     COORD result = target;
     const auto bufferSize = GetSize();
@@ -1331,7 +1348,7 @@ const COORD TextBuffer::_GetWordEndForAccessibility(const COORD target, const st
 // - wordDelimiters - what characters are we considering for the separation of words
 // Return Value:
 // - The COORD for the last character of the current word or delimiter run (stopped by right margin)
-const COORD TextBuffer::_GetWordEndForSelection(const COORD target, const std::wstring_view wordDelimiters) const
+const COORD TextBuffer::_GetWordEndForSelection(const COORD target, const std::wstring_view& wordDelimiters) const
 {
     const auto bufferSize = GetSize();
 
@@ -1440,7 +1457,7 @@ bool TextBuffer::MoveToNextWord(COORD& pos, const std::wstring_view wordDelimite
 // Return Value:
 // - true, if successfully updated pos. False, if we are unable to move (usually due to a buffer boundary)
 // - pos - The COORD for the first character on the "word" (inclusive)
-bool TextBuffer::MoveToPreviousWord(COORD& pos, std::wstring_view wordDelimiters) const
+bool TextBuffer::MoveToPreviousWord(COORD& pos, const std::wstring_view& wordDelimiters) const
 {
     // move to the beginning of the current word
     auto copy{ GetWordStart(pos, wordDelimiters, true) };
@@ -1837,7 +1854,7 @@ const TextBuffer::TextAndColor TextBuffer::GetText(const bool includeCRLF,
 // - string containing the generated HTML
 std::string TextBuffer::GenHTML(const TextAndColor& rows,
                                 const int fontHeightPoints,
-                                const std::wstring_view fontFaceName,
+                                const std::wstring_view& fontFaceName,
                                 const COLORREF backgroundColor)
 {
     try
@@ -1900,7 +1917,7 @@ std::string TextBuffer::GenHTML(const TextAndColor& rows,
                 const auto writeAccumulatedChars = [&](bool includeCurrent) {
                     if (col >= startOffset)
                     {
-                        const auto unescapedText = ConvertToA(CP_UTF8, std::wstring_view(rows.text.at(row)).substr(startOffset, col - startOffset + includeCurrent));
+                        const auto unescapedText = ConvertToA(CP_UTF8, rows.text.at(row).substr(startOffset, col - startOffset + includeCurrent));
                         for (const auto c : unescapedText)
                         {
                             switch (c)
@@ -2026,7 +2043,7 @@ std::string TextBuffer::GenHTML(const TextAndColor& rows,
 // - htmlTitle - value used in title tag of html header. Used to name the application
 // Return Value:
 // - string containing the generated RTF
-std::string TextBuffer::GenRTF(const TextAndColor& rows, const int fontHeightPoints, const std::wstring_view fontFaceName, const COLORREF backgroundColor)
+std::string TextBuffer::GenRTF(const TextAndColor& rows, const int fontHeightPoints, const std::wstring_view& fontFaceName, const COLORREF backgroundColor)
 {
     try
     {
@@ -2560,9 +2577,9 @@ HRESULT TextBuffer::Reflow(TextBuffer& oldBuffer,
 // - Adds or updates a hyperlink in our hyperlink table
 // Arguments:
 // - The hyperlink URI, the hyperlink id (could be new or old)
-void TextBuffer::AddHyperlinkToMap(std::wstring_view uri, uint16_t id)
+void TextBuffer::AddHyperlinkToMap(const std::wstring_view& uri, uint16_t id)
 {
-    _hyperlinkMap[id] = uri;
+    _hyperlinkMap.emplace(id, uri);
 }
 
 // Method Description:
@@ -2582,14 +2599,13 @@ std::wstring TextBuffer::GetHyperlinkUriFromId(uint16_t id) const
 // - The user-defined id
 // Return value:
 // - The internal hyperlink ID
-uint16_t TextBuffer::GetHyperlinkId(std::wstring_view uri, std::wstring_view id)
+uint16_t TextBuffer::GetHyperlinkId(const std::wstring_view& uri, const std::wstring_view& id)
 {
     uint16_t numericId = 0;
     if (id.empty())
     {
         // no custom id specified, return our internal count
-        numericId = _currentHyperlinkId;
-        ++_currentHyperlinkId;
+        numericId = _currentHyperlinkId++;
     }
     else
     {
@@ -2601,9 +2617,9 @@ uint16_t TextBuffer::GetHyperlinkId(std::wstring_view uri, std::wstring_view id)
         if (result.second)
         {
             // the custom id did not already exist
+            _hyperlinkCustomIdMapReverse.insert_or_assign(_currentHyperlinkId, key);
             ++_currentHyperlinkId;
         }
-        numericId = (*(result.first)).second;
     }
     // _currentHyperlinkId could overflow, make sure its not 0
     if (_currentHyperlinkId == 0)
@@ -2621,13 +2637,11 @@ uint16_t TextBuffer::GetHyperlinkId(std::wstring_view uri, std::wstring_view id)
 void TextBuffer::RemoveHyperlinkFromMap(uint16_t id) noexcept
 {
     _hyperlinkMap.erase(id);
-    for (const auto& customIdPair : _hyperlinkCustomIdMap)
+
+    if (auto it = _hyperlinkCustomIdMapReverse.find(id); it != _hyperlinkCustomIdMapReverse.end())
     {
-        if (customIdPair.second == id)
-        {
-            _hyperlinkCustomIdMap.erase(customIdPair.first);
-            break;
-        }
+        _hyperlinkCustomIdMap.erase(it->second);
+        _hyperlinkCustomIdMapReverse.erase(it);
     }
 }
 
@@ -2640,12 +2654,9 @@ void TextBuffer::RemoveHyperlinkFromMap(uint16_t id) noexcept
 // - The custom ID if there was one, empty string otherwise
 std::wstring TextBuffer::GetCustomIdFromId(uint16_t id) const
 {
-    for (auto customIdPair : _hyperlinkCustomIdMap)
+    if (auto it = _hyperlinkCustomIdMapReverse.find(id); it != _hyperlinkCustomIdMapReverse.end())
     {
-        if (customIdPair.second == id)
-        {
-            return customIdPair.first;
-        }
+        return it->second;
     }
     return {};
 }
@@ -2659,6 +2670,7 @@ void TextBuffer::CopyHyperlinkMaps(const TextBuffer& other)
 {
     _hyperlinkMap = other._hyperlinkMap;
     _hyperlinkCustomIdMap = other._hyperlinkCustomIdMap;
+    _hyperlinkCustomIdMapReverse = other._hyperlinkCustomIdMapReverse;
     _currentHyperlinkId = other._currentHyperlinkId;
 }
 
@@ -2669,7 +2681,7 @@ void TextBuffer::CopyHyperlinkMaps(const TextBuffer& other)
 // - The regex pattern
 // Return value:
 // - An ID that the caller should associate with the given pattern
-const size_t TextBuffer::AddPatternRecognizer(const std::wstring_view regexString)
+const size_t TextBuffer::AddPatternRecognizer(const std::wstring_view& regexString)
 {
     ++_currentPatternId;
     _idsAndPatterns.emplace(std::make_pair(_currentPatternId, regexString));

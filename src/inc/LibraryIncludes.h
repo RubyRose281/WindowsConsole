@@ -51,8 +51,8 @@
 #include <vector>
 
 // WIL
-#include <wil/Common.h>
-#include <wil/Result.h>
+#include <wil/common.h>
+#include <wil/result.h>
 #include <wil/nt_result_macros.h>
 #include <wil/resource.h>
 #include <wil/wistd_memory.h>
