@@ -4,7 +4,6 @@
 #pragma once
 
 #include "../../renderer/inc/FontInfoDesired.hpp"
-#include "DxFontInfo.h"
 #include "BoxDrawingEffect.h"
 
 #include <dwrite.h>
@@ -46,97 +45,69 @@ namespace Microsoft::Console::Render
 
         [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFontFallback> SystemFontFallback();
 
-        // A locale that can be used on construction of assorted DX objects that want to know one.
-        [[nodiscard]] std::wstring UserLocaleName();
-
-        [[nodiscard]] til::size GlyphCell() noexcept;
-        [[nodiscard]] LineMetrics GetLineMetrics() noexcept;
+        [[nodiscard]] til::size GlyphCell() const noexcept;
+        [[nodiscard]] LineMetrics GetLineMetrics() const noexcept;
 
         // The weight of default font
-        [[nodiscard]] DWRITE_FONT_WEIGHT DefaultFontWeight() noexcept;
+        [[nodiscard]] DWRITE_FONT_WEIGHT DefaultFontWeight() const noexcept;
 
         // The style of default font
-        [[nodiscard]] DWRITE_FONT_STYLE DefaultFontStyle() noexcept;
+        [[nodiscard]] static DWRITE_FONT_STYLE DefaultFontStyle() noexcept;
 
         // The stretch of default font
-        [[nodiscard]] DWRITE_FONT_STRETCH DefaultFontStretch() noexcept;
+        [[nodiscard]] static DWRITE_FONT_STRETCH DefaultFontStretch() noexcept;
 
         // The font features of the default font
         [[nodiscard]] const std::vector<DWRITE_FONT_FEATURE>& DefaultFontFeatures() const noexcept;
 
         // The DirectWrite format object representing the size and other text properties to be applied (by default)
-        [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteTextFormat> DefaultTextFormat();
+        [[nodiscard]] IDWriteTextFormat* DefaultTextFormat() const noexcept;
 
         // The DirectWrite font face to use while calculating layout (by default)
-        [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFontFace1> DefaultFontFace();
+        [[nodiscard]] IDWriteFontFace1* DefaultFontFace() const noexcept;
 
         // Box drawing scaling effects that are cached for the base font across layouts
-        [[nodiscard]] Microsoft::WRL::ComPtr<IBoxDrawingEffect> DefaultBoxDrawingEffect();
+        [[nodiscard]] IBoxDrawingEffect* DefaultBoxDrawingEffect();
 
         // The attributed variants of the format object representing the size and other text properties
-        [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteTextFormat> TextFormatWithAttribute(DWRITE_FONT_WEIGHT weight,
-                                                                                        DWRITE_FONT_STYLE style,
-                                                                                        DWRITE_FONT_STRETCH stretch);
+        [[nodiscard]] IDWriteTextFormat* TextFormatWithAttribute(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept;
 
         // The attributed variants of the font face to use while calculating layout
-        [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFontFace1> FontFaceWithAttribute(DWRITE_FONT_WEIGHT weight,
-                                                                                     DWRITE_FONT_STYLE style,
-                                                                                     DWRITE_FONT_STRETCH stretch);
+        [[nodiscard]] IDWriteFontFace1* FontFaceWithAttribute(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept;
+
+        [[nodiscard]] const std::vector<DWRITE_FONT_AXIS_VALUE>& GetAxisVector(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept;
 
         [[nodiscard]] HRESULT UpdateFont(const FontInfoDesired& desired, FontInfo& fiFontInfo, const int dpi, const std::unordered_map<std::wstring_view, uint32_t>& features = {}, const std::unordered_map<std::wstring_view, float>& axes = {}) noexcept;
 
-        [[nodiscard]] static HRESULT STDMETHODCALLTYPE s_CalculateBoxEffect(IDWriteTextFormat* format, size_t widthPixels, IDWriteFontFace1* face, float fontScale, IBoxDrawingEffect** effect) noexcept;
+        [[nodiscard]] static HRESULT s_CalculateBoxEffect(IDWriteTextFormat* format, size_t widthPixels, IDWriteFontFace1* face, float fontScale, IBoxDrawingEffect** effect) noexcept;
 
         bool DidUserSetFeatures() const noexcept;
         bool DidUserSetAxes() const noexcept;
-        void InhibitUserWeight(bool inhibitUserWeight) noexcept;
-        bool DidUserSetItalic() const noexcept;
-
-        std::vector<DWRITE_FONT_AXIS_VALUE> GetAxisVector(const DWRITE_FONT_WEIGHT fontWeight,
-                                                          const DWRITE_FONT_STRETCH fontStretch,
-                                                          const DWRITE_FONT_STYLE fontStyle,
-                                                          IDWriteTextFormat3* format);
 
     private:
-        using FontAttributeMapKey = uint32_t;
-
-        bool _inhibitUserWeight{ false };
-        bool _didUserSetItalic{ false };
-        bool _didUserSetFeatures{ false };
-        bool _didUserSetAxes{ false };
-        // The font features to apply to the text
-        std::vector<DWRITE_FONT_FEATURE> _featureVector;
-
-        // The font axes to apply to the text
-        std::vector<DWRITE_FONT_AXIS_VALUE> _axesVector;
-        gsl::span<DWRITE_FONT_AXIS_VALUE> _axesVectorWithoutWeight;
-
-        // We use this to identify font variants with different attributes.
-        static FontAttributeMapKey _ToMapKey(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style, DWRITE_FONT_STRETCH stretch) noexcept
-        {
-            return (weight << 16) | (style << 8) | stretch;
-        };
-
-        void _SetFeatures(const std::unordered_map<std::wstring_view, uint32_t>& features);
-        void _SetAxes(const std::unordered_map<std::wstring_view, float>& axes);
-        float _FontStretchToWidthAxisValue(DWRITE_FONT_STRETCH fontStretch) noexcept;
-        float _FontStyleToSlantFixedAxisValue(DWRITE_FONT_STYLE fontStyle) noexcept;
+        void _RefreshUserLocaleName();
         void _BuildFontRenderData(const FontInfoDesired& desired, FontInfo& actual, const int dpi);
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> _BuildTextFormat(const DxFontInfo& fontInfo, const std::wstring_view localeName);
+        ::Microsoft::WRL::ComPtr<IDWriteFont> _ResolveFontWithFallback(std::wstring familyName, DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style);
+        [[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFont> _FindFont(const wchar_t* familyName, DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style);
+        [[nodiscard]] IDWriteFontCollection* _NearbyCollection();
+        [[nodiscard]] static std::vector<std::filesystem::path> s_GetNearbyFonts();
 
-        std::unordered_map<FontAttributeMapKey, ::Microsoft::WRL::ComPtr<IDWriteTextFormat>> _textFormatMap;
-        std::unordered_map<FontAttributeMapKey, ::Microsoft::WRL::ComPtr<IDWriteFontFace1>> _fontFaceMap;
+        ::Microsoft::WRL::ComPtr<IDWriteFontFace1> _fontFaces[2][2];
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> _textFormats[2][2];
+        std::vector<DWRITE_FONT_AXIS_VALUE> _textFormatAxes[2][2];
+        std::vector<DWRITE_FONT_FEATURE> _featureVector;
 
         ::Microsoft::WRL::ComPtr<IBoxDrawingEffect> _boxDrawingEffect;
         ::Microsoft::WRL::ComPtr<IDWriteFontFallback> _systemFontFallback;
+        ::Microsoft::WRL::ComPtr<IDWriteFontCollection> _nearbyFontCollection;
         ::Microsoft::WRL::ComPtr<IDWriteFactory1> _dwriteFactory;
         ::Microsoft::WRL::ComPtr<IDWriteTextAnalyzer1> _dwriteTextAnalyzer;
 
-        std::wstring _userLocaleName;
-        DxFontInfo _defaultFontInfo;
+        wil::unique_process_heap_string _userLocaleName;
         til::size _glyphCell;
         DWRITE_LINE_SPACING _lineSpacing;
         LineMetrics _lineMetrics;
+        DWRITE_FONT_WEIGHT _userFontWeight;
         float _fontSize;
     };
 }

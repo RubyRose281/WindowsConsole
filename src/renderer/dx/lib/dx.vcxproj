@@ -18,7 +18,6 @@
     <ClCompile Include="..\BoxDrawingEffect.cpp" />
     <ClCompile Include="..\CustomTextLayout.cpp" />
     <ClCompile Include="..\CustomTextRenderer.cpp" />
-    <ClCompile Include="..\DxFontInfo.cpp" />
     <ClCompile Include="..\DxFontRenderData.cpp" />
     <ClCompile Include="..\DxRenderer.cpp" />
     <ClCompile Include="..\precomp.cpp">
@@ -29,7 +28,6 @@
     <ClInclude Include="..\BoxDrawingEffect.h" />
     <ClInclude Include="..\CustomTextLayout.h" />
     <ClInclude Include="..\CustomTextRenderer.h" />
-    <ClInclude Include="..\DxFontInfo.h" />
     <ClInclude Include="..\DxFontRenderData.h" />
     <ClInclude Include="..\DxRenderer.hpp" />
     <ClInclude Include="..\precomp.h" />

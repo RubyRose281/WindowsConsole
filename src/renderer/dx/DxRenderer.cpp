@@ -941,7 +941,7 @@ try
 {
     return _dwriteFactory->CreateTextLayout(string,
                                             gsl::narrow<UINT32>(stringLength),
-                                            _fontRenderData->DefaultTextFormat().Get(),
+                                            _fontRenderData->DefaultTextFormat(),
                                             _displaySizePixels.width<float>(),
                                             _fontRenderData->GlyphCell().height() != 0 ? _fontRenderData->GlyphCell().height<float>() : _displaySizePixels.height<float>(),
                                             ppTextLayout);
@@ -1502,7 +1502,7 @@ void DxEngine::WaitUntilCanRender() noexcept
 {
     // Throttle the DxEngine a bit down to ~60 FPS.
     // This improves throughput for rendering complex or colored text.
-    Sleep(8);
+    //Sleep(8);
 
     if (_swapChainFrameLatencyWaitableObject)
     {

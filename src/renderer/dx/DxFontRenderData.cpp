@@ -10,16 +10,14 @@
 #include <VersionHelpers.h>
 
 static constexpr float POINTS_PER_INCH = 72.0f;
-static constexpr std::wstring_view FALLBACK_FONT_FACES[] = { L"Consolas", L"Lucida Console", L"Courier New" };
-static constexpr std::wstring_view FALLBACK_LOCALE = L"en-us";
-static constexpr size_t TAG_LENGTH = 4;
+static constexpr const wchar_t* FALLBACK_FONT_FACES[] = { L"Consolas", L"Lucida Console", L"Courier New" };
+static constexpr wchar_t FALLBACK_LOCALE[]{ L"en-us" };
 
 using namespace Microsoft::Console::Render;
 
 DxFontRenderData::DxFontRenderData(::Microsoft::WRL::ComPtr<IDWriteFactory1> dwriteFactory) noexcept :
     _dwriteFactory(dwriteFactory),
     _fontSize{},
-    _glyphCell{},
     _lineMetrics{},
     _lineSpacing{}
 {
@@ -49,49 +47,46 @@ DxFontRenderData::DxFontRenderData(::Microsoft::WRL::ComPtr<IDWriteFactory1> dwr
     return _systemFontFallback;
 }
 
-[[nodiscard]] std::wstring DxFontRenderData::UserLocaleName()
+void DxFontRenderData::_RefreshUserLocaleName()
 {
-    if (_userLocaleName.empty())
-    {
-        std::array<wchar_t, LOCALE_NAME_MAX_LENGTH> localeName;
+    std::array<wchar_t, LOCALE_NAME_MAX_LENGTH> buffer;
+    const wchar_t* localeName = buffer.data();
+    auto length = GetUserDefaultLocaleName(buffer.data(), gsl::narrow_cast<int>(buffer.size()));
 
-        const auto returnCode = GetUserDefaultLocaleName(localeName.data(), gsl::narrow<int>(localeName.size()));
-        if (returnCode)
-        {
-            _userLocaleName = { localeName.data() };
-        }
-        else
-        {
-            _userLocaleName = { FALLBACK_LOCALE.data(), FALLBACK_LOCALE.size() };
-        }
+    if (length <= 0)
+    {
+        localeName = &FALLBACK_LOCALE[0];
+        length = sizeof(FALLBACK_LOCALE);
     }
 
-    return _userLocaleName;
+    // length is including the trailing null byte.
+    // See GetUserDefaultLocaleName()'s docs.
+    _userLocaleName = wil::make_process_heap_string_nothrow(localeName, length - 1);
 }
 
-[[nodiscard]] til::size DxFontRenderData::GlyphCell() noexcept
+[[nodiscard]] til::size DxFontRenderData::GlyphCell() const noexcept
 {
     return _glyphCell;
 }
 
-[[nodiscard]] DxFontRenderData::LineMetrics DxFontRenderData::GetLineMetrics() noexcept
+[[nodiscard]] DxFontRenderData::LineMetrics DxFontRenderData::GetLineMetrics() const noexcept
 {
     return _lineMetrics;
 }
 
-[[nodiscard]] DWRITE_FONT_WEIGHT DxFontRenderData::DefaultFontWeight() noexcept
+[[nodiscard]] DWRITE_FONT_WEIGHT DxFontRenderData::DefaultFontWeight() const noexcept
 {
-    return _defaultFontInfo.GetWeight();
+    return _userFontWeight;
 }
 
 [[nodiscard]] DWRITE_FONT_STYLE DxFontRenderData::DefaultFontStyle() noexcept
 {
-    return _defaultFontInfo.GetStyle();
+    return DWRITE_FONT_STYLE_NORMAL;
 }
 
 [[nodiscard]] DWRITE_FONT_STRETCH DxFontRenderData::DefaultFontStretch() noexcept
 {
-    return _defaultFontInfo.GetStretch();
+    return DWRITE_FONT_STRETCH_NORMAL;
 }
 
 [[nodiscard]] const std::vector<DWRITE_FONT_FEATURE>& DxFontRenderData::DefaultFontFeatures() const noexcept
@@ -99,81 +94,40 @@ DxFontRenderData::DxFontRenderData(::Microsoft::WRL::ComPtr<IDWriteFactory1> dwr
     return _featureVector;
 }
 
-[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteTextFormat> DxFontRenderData::DefaultTextFormat()
+[[nodiscard]] IDWriteTextFormat* DxFontRenderData::DefaultTextFormat() const noexcept
 {
-    return TextFormatWithAttribute(_defaultFontInfo.GetWeight(), _defaultFontInfo.GetStyle(), _defaultFontInfo.GetStretch());
+    return _textFormats[0][0].Get();
 }
 
-[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFontFace1> DxFontRenderData::DefaultFontFace()
+[[nodiscard]] IDWriteFontFace1* DxFontRenderData::DefaultFontFace() const noexcept
 {
-    return FontFaceWithAttribute(_defaultFontInfo.GetWeight(), _defaultFontInfo.GetStyle(), _defaultFontInfo.GetStretch());
+    return _fontFaces[0][0].Get();
 }
 
-[[nodiscard]] Microsoft::WRL::ComPtr<IBoxDrawingEffect> DxFontRenderData::DefaultBoxDrawingEffect()
+[[nodiscard]] IBoxDrawingEffect* DxFontRenderData::DefaultBoxDrawingEffect()
 {
     if (!_boxDrawingEffect)
     {
         // Calculate and cache the box effect for the base font. Scale is 1.0f because the base font is exactly the scale we want already.
-        THROW_IF_FAILED(s_CalculateBoxEffect(DefaultTextFormat().Get(), _glyphCell.width(), DefaultFontFace().Get(), 1.0f, &_boxDrawingEffect));
+        THROW_IF_FAILED(s_CalculateBoxEffect(DefaultTextFormat(), _glyphCell.width(), DefaultFontFace(), 1.0f, &_boxDrawingEffect));
     }
 
-    return _boxDrawingEffect;
+    return _boxDrawingEffect.Get();
 }
 
-[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteTextFormat> DxFontRenderData::TextFormatWithAttribute(DWRITE_FONT_WEIGHT weight,
-                                                                                                  DWRITE_FONT_STYLE style,
-                                                                                                  DWRITE_FONT_STRETCH stretch)
+[[nodiscard]] IDWriteTextFormat* DxFontRenderData::TextFormatWithAttribute(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept
 {
-    const auto textFormatIt = _textFormatMap.find(_ToMapKey(weight, style, stretch));
-    if (textFormatIt == _textFormatMap.end())
-    {
-        DxFontInfo fontInfo = _defaultFontInfo;
-        fontInfo.SetWeight(weight);
-        fontInfo.SetStyle(style);
-        fontInfo.SetStretch(stretch);
-
-        // Create the font with the fractional pixel height size.
-        // It should have an integer pixel width by our math.
-        // Then below, apply the line spacing to the format to position the floating point pixel height characters
-        // into a cell that has an integer pixel height leaving some padding above/below as necessary to round them out.
-        std::wstring localeName = UserLocaleName();
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
-        THROW_IF_FAILED(_BuildTextFormat(fontInfo, localeName).As(&textFormat));
-        THROW_IF_FAILED(textFormat->SetLineSpacing(_lineSpacing.method, _lineSpacing.height, _lineSpacing.baseline));
-        THROW_IF_FAILED(textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
-        THROW_IF_FAILED(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
-
-        _textFormatMap.emplace(_ToMapKey(weight, style, stretch), textFormat);
-        return textFormat;
-    }
-    else
-    {
-        return textFormatIt->second;
-    }
+    return _textFormats[style != DWRITE_FONT_STYLE_NORMAL][weight != _userFontWeight].Get();
 }
 
-[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFontFace1> DxFontRenderData::FontFaceWithAttribute(DWRITE_FONT_WEIGHT weight,
-                                                                                               DWRITE_FONT_STYLE style,
-                                                                                               DWRITE_FONT_STRETCH stretch)
+[[nodiscard]] IDWriteFontFace1* DxFontRenderData::FontFaceWithAttribute(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept
 {
-    const auto fontFaceIt = _fontFaceMap.find(_ToMapKey(weight, style, stretch));
-    if (fontFaceIt == _fontFaceMap.end())
-    {
-        DxFontInfo fontInfo = _defaultFontInfo;
-        fontInfo.SetWeight(weight);
-        fontInfo.SetStyle(style);
-        fontInfo.SetStretch(stretch);
+    return _fontFaces[style != DWRITE_FONT_STYLE_NORMAL][weight != _userFontWeight].Get();
+}
 
-        std::wstring fontLocaleName = UserLocaleName();
-        Microsoft::WRL::ComPtr<IDWriteFontFace1> fontFace = fontInfo.ResolveFontFaceWithFallback(_dwriteFactory.Get(), fontLocaleName);
-
-        _fontFaceMap.emplace(_ToMapKey(weight, style, stretch), fontFace);
-        return fontFace;
-    }
-    else
-    {
-        return fontFaceIt->second;
-    }
+const std::vector<DWRITE_FONT_AXIS_VALUE>& DxFontRenderData::GetAxisVector(DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style) const noexcept
+{
+    return _textFormatAxes[style != DWRITE_FONT_STYLE_NORMAL][weight != _userFontWeight];
 }
 
 // Routine Description:
@@ -185,29 +139,147 @@ DxFontRenderData::DxFontRenderData(::Microsoft::WRL::ComPtr<IDWriteFactory1> dwr
 // Return Value:
 // - S_OK or relevant DirectX error
 [[nodiscard]] HRESULT DxFontRenderData::UpdateFont(const FontInfoDesired& desired, FontInfo& actual, const int dpi, const std::unordered_map<std::wstring_view, uint32_t>& features, const std::unordered_map<std::wstring_view, float>& axes) noexcept
+try
 {
-    try
+    std::vector<DWRITE_FONT_FEATURE> fontFeatures;
+    if (!features.empty())
     {
-        _userLocaleName.clear();
-        _textFormatMap.clear();
-        _fontFaceMap.clear();
-        _boxDrawingEffect.Reset();
+        fontFeatures.reserve(features.size() + 3);
 
-        // Initialize the default font info and build everything from here.
-        _defaultFontInfo = DxFontInfo(desired.GetFaceName(),
-                                      desired.GetWeight(),
-                                      DWRITE_FONT_STYLE_NORMAL,
-                                      DWRITE_FONT_STRETCH_NORMAL);
+        // All of these features are enabled by default by DirectWrite.
+        // If you want to (and can) peek into the source of DirectWrite
+        // you can look for the "GenericDefaultGsubFeatures" and "GenericDefaultGposFeatures" arrays.
+        // Gsub is for GetGlyphs() and Gpos for GetGlyphPlacements().
+        //
+        // GH#10774: Apparently specifying all of the features is just redundant.
+        fontFeatures.emplace_back(DWRITE_FONT_FEATURE{ DWRITE_FONT_FEATURE_TAG_STANDARD_LIGATURES, 1 });
+        fontFeatures.emplace_back(DWRITE_FONT_FEATURE{ DWRITE_FONT_FEATURE_TAG_CONTEXTUAL_LIGATURES, 1 });
+        fontFeatures.emplace_back(DWRITE_FONT_FEATURE{ DWRITE_FONT_FEATURE_TAG_CONTEXTUAL_ALTERNATES, 1 });
 
-        _SetFeatures(features);
-        _SetAxes(axes);
-
-        _BuildFontRenderData(desired, actual, dpi);
+        for (const auto& p : features)
+        {
+            if (p.first.size() == 4)
+            {
+                const auto s = p.first.data();
+                switch (const auto tag = DWRITE_MAKE_FONT_FEATURE_TAG(s[0], s[1], s[2], s[3]))
+                {
+                case DWRITE_FONT_FEATURE_TAG_STANDARD_LIGATURES:
+                    fontFeatures[0].parameter = p.second;
+                    break;
+                case DWRITE_FONT_FEATURE_TAG_CONTEXTUAL_LIGATURES:
+                    fontFeatures[1].parameter = p.second;
+                    break;
+                case DWRITE_FONT_FEATURE_TAG_CONTEXTUAL_ALTERNATES:
+                    fontFeatures[2].parameter = p.second;
+                    break;
+                default:
+                    fontFeatures.emplace_back(DWRITE_FONT_FEATURE{ tag, p.second });
+                    break;
+                }
+            }
+        }
     }
-    CATCH_RETURN();
+
+    std::vector<DWRITE_FONT_AXIS_VALUE> fontAxisValues;
+    if (!axes.empty())
+    {
+        fontAxisValues.reserve(axes.size() + 3);
+
+        // Just a few lines below we configure IDWriteTextFormat3 instances with these font axes.
+        // We need at least all 3 of these axes below, in order to ensure that if we get a request for an italic
+        // text format, we can supply an italic one, no matter what font axes the user set (or didn't set).
+        fontAxisValues.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_WEIGHT, -1.0f });
+        fontAxisValues.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_ITALIC, -1.0f });
+        fontAxisValues.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_SLANT, -1.0f });
+
+        for (const auto& p : axes)
+        {
+            if (p.first.size() == 4)
+            {
+                const auto s = p.first.data();
+                switch (const auto tag = DWRITE_MAKE_FONT_AXIS_TAG(s[0], s[1], s[2], s[3]))
+                {
+                case DWRITE_FONT_AXIS_TAG_WEIGHT:
+                    fontAxisValues[0].value = p.second;
+                    break;
+                case DWRITE_FONT_AXIS_TAG_ITALIC:
+                    fontAxisValues[1].value = p.second;
+                    break;
+                case DWRITE_FONT_AXIS_TAG_SLANT:
+                    fontAxisValues[2].value = p.second;
+                    break;
+                default:
+                    fontAxisValues.emplace_back(DWRITE_FONT_AXIS_VALUE{ tag, p.second });
+                    break;
+                }
+            }
+        }
+    }
+
+    _RefreshUserLocaleName();
+    _BuildFontRenderData(desired, actual, dpi);
+    _featureVector = std::move(fontFeatures);
+    _userFontWeight = static_cast<DWRITE_FONT_WEIGHT>(actual.GetWeight());
+    _boxDrawingEffect.Reset();
+
+    {
+        // Just a few lines above we hardcode indices 0/1/2 in fontAxisValues to the weight/italic/slant axes.
+        // If they're -1.0f they haven't been set by the user and must be filled by us.
+        // When we call SetFontAxisValues() we basically override (disable) DirectWrite's internal font axes,
+        // and if either of the 3 aren't set we'd make it impossible for the user to see bold/italic text.
+#pragma warning(suppress : 26494) // Variable 'standardAxes' is uninitialized. Always initialize an object (type.5).
+        std::array<DWRITE_FONT_AXIS_VALUE, 3> standardAxes;
+
+        if (!fontAxisValues.empty())
+        {
+            Expects(fontAxisValues.size() >= standardAxes.size());
+            memcpy(standardAxes.data(), fontAxisValues.data(), sizeof(standardAxes));
+        }
+
+        for (auto italic = 0; italic < 2; ++italic)
+        {
+            for (auto bold = 0; bold < 2; ++bold)
+            {
+                const auto fontWeight = bold ? DWRITE_FONT_WEIGHT_BOLD : _userFontWeight;
+                const auto fontStyle = italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
+                auto& textFormat = _textFormats[italic][bold];
+
+                // If the given face name couldn't be found this will call _NearbyCollection at some point.
+                // Thanks to that we can use _nearbyFontCollection.Get() below to get the font collection for our textFormat as well.
+                const auto font = _ResolveFontWithFallback(actual.GetFaceName(), fontWeight, fontStyle);
+
+                Microsoft::WRL::ComPtr<IDWriteFontFace> face;
+                THROW_IF_FAILED(font->CreateFontFace(&face));
+                THROW_IF_FAILED(face.As(&_fontFaces[italic][bold]));
+
+                THROW_IF_FAILED(_dwriteFactory->CreateTextFormat(actual.GetFaceName().c_str(), _nearbyFontCollection.Get(), font->GetWeight(), font->GetStyle(), DWRITE_FONT_STRETCH_NORMAL, _fontSize, _userLocaleName.get(), &textFormat));
+                THROW_IF_FAILED(textFormat->SetLineSpacing(_lineSpacing.method, _lineSpacing.height, _lineSpacing.baseline));
+                THROW_IF_FAILED(textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
+                THROW_IF_FAILED(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
+
+                if (!fontAxisValues.empty())
+                {
+                    Microsoft::WRL::ComPtr<IDWriteTextFormat3> textFormat3;
+                    if (SUCCEEDED(textFormat.As(&textFormat3)))
+                    {
+                        // The wght axis defaults to the font weight.
+                        fontAxisValues[0].value = bold || standardAxes[0].value == -1.0f ? static_cast<float>(fontWeight) : standardAxes[0].value;
+                        // The ital axis defaults to 1 if this is italic and 0 otherwise.
+                        fontAxisValues[1].value = italic ? 1.0f : (standardAxes[1].value == -1.0f ? 0.0f : standardAxes[1].value);
+                        // The slnt axis defaults to -12 if this is italic and 0 otherwise.
+                        fontAxisValues[2].value = italic ? -12.0f : (standardAxes[2].value == -1.0f ? 0.0f : standardAxes[2].value);
+
+                        THROW_IF_FAILED(textFormat3->SetFontAxisValues(fontAxisValues.data(), gsl::narrow_cast<UINT32>(fontAxisValues.size())));
+                        _textFormatAxes[italic][bold] = fontAxisValues;
+                    }
+                }
+            }
+        }
+    }
 
     return S_OK;
 }
+CATCH_RETURN()
 
 // Routine Description:
 // - Calculates the box drawing scale/translate matrix values to fit a box glyph into the cell as perfectly as possible.
@@ -219,7 +291,7 @@ DxFontRenderData::DxFontRenderData(::Microsoft::WRL::ComPtr<IDWriteFactory1> dwr
 // - effect - Receives the effect to apply to box drawing characters. If no effect is received, special treatment isn't required.
 // Return Value:
 // - S_OK, GSL/WIL errors, DirectWrite errors, or math errors.
-[[nodiscard]] HRESULT STDMETHODCALLTYPE DxFontRenderData::s_CalculateBoxEffect(IDWriteTextFormat* format, size_t widthPixels, IDWriteFontFace1* face, float fontScale, IBoxDrawingEffect** effect) noexcept
+[[nodiscard]] HRESULT DxFontRenderData::s_CalculateBoxEffect(IDWriteTextFormat* format, size_t widthPixels, IDWriteFontFace1* face, float fontScale, IBoxDrawingEffect** effect) noexcept
 try
 {
     // Check for bad in parameters.
@@ -454,247 +526,14 @@ CATCH_RETURN()
 // - Returns whether the user set or updated any of the font features to be applied
 bool DxFontRenderData::DidUserSetFeatures() const noexcept
 {
-    return _didUserSetFeatures;
+    return !_featureVector.empty();
 }
 
 // Routine Description:
 // - Returns whether the user set or updated any of the font axes to be applied
 bool DxFontRenderData::DidUserSetAxes() const noexcept
 {
-    return _didUserSetAxes;
-}
-
-// Routine Description:
-// - Function called to inform us whether to use the user set weight
-//   in the font axes
-// - Called by CustomTextLayout, when the text attribute is bold we should
-//   ignore the user set weight, otherwise setting the bold font axis
-//   breaks the bold font attribute
-// Arguments:
-// - inhibitUserWeight: boolean that tells us if we should use the user set weight
-//   in the font axes
-void DxFontRenderData::InhibitUserWeight(bool inhibitUserWeight) noexcept
-{
-    _inhibitUserWeight = inhibitUserWeight;
-}
-
-// Routine Description:
-// - Returns whether the set italic in the font axes
-// Return Value:
-// - True if the user set the italic axis to 1,
-//   false if the italic axis is not present or the italic axis is set to 0
-bool DxFontRenderData::DidUserSetItalic() const noexcept
-{
-    return _didUserSetItalic;
-}
-
-// Routine Description:
-// - Updates our internal map of font features with the given features
-// - NOTE TO CALLER: Make sure to call _BuildFontRenderData after calling this for the feature changes
-//   to take place
-// Arguments:
-// - features - the features to update our map with
-void DxFontRenderData::_SetFeatures(const std::unordered_map<std::wstring_view, uint32_t>& features)
-{
-    // Populate the feature map with the standard list first
-    std::unordered_map<DWRITE_FONT_FEATURE_TAG, uint32_t> featureMap{
-        { DWRITE_MAKE_FONT_FEATURE_TAG('c', 'a', 'l', 't'), 1 }, // Contextual Alternates
-        { DWRITE_MAKE_FONT_FEATURE_TAG('l', 'i', 'g', 'a'), 1 }, // Standard Ligatures
-        { DWRITE_MAKE_FONT_FEATURE_TAG('c', 'l', 'i', 'g'), 1 }, // Contextual Ligatures
-        { DWRITE_MAKE_FONT_FEATURE_TAG('k', 'e', 'r', 'n'), 1 } // Kerning
-    };
-
-    // Update our feature map with the provided features
-    if (!features.empty())
-    {
-        for (const auto [tag, param] : features)
-        {
-            if (tag.length() == TAG_LENGTH)
-            {
-                featureMap.insert_or_assign(DWRITE_MAKE_FONT_FEATURE_TAG(til::at(tag, 0), til::at(tag, 1), til::at(tag, 2), til::at(tag, 3)), param);
-            }
-        }
-        _didUserSetFeatures = true;
-    }
-    else
-    {
-        _didUserSetFeatures = false;
-    }
-
-    // Convert the data to DWRITE_FONT_FEATURE and store it in a vector for CustomTextLayout
-    _featureVector.clear();
-    for (const auto [tag, param] : featureMap)
-    {
-        _featureVector.push_back(DWRITE_FONT_FEATURE{ tag, param });
-    }
-}
-
-// Routine Description:
-// - Updates our internal map of font axes with the given axes
-// - NOTE TO CALLER: Make sure to call _BuildFontRenderData after calling this for the axes changes
-//   to take place
-// Arguments:
-// - axes - the axes to update our map with
-void DxFontRenderData::_SetAxes(const std::unordered_map<std::wstring_view, float>& axes)
-{
-    // Clear out the old vector and booleans in case this is a hot reload
-    _axesVector = std::vector<DWRITE_FONT_AXIS_VALUE>{};
-    _didUserSetAxes = false;
-    _didUserSetItalic = false;
-
-    // Update our axis map with the provided axes
-    if (!axes.empty())
-    {
-        // Store the weight aside: we will be creating a span of all the axes in the vector except the weight,
-        // and then we will add the weight to the vector
-        // We are doing this so that when the text attribute is bold, we can apply all the axes except the weight
-        std::optional<DWRITE_FONT_AXIS_VALUE> weightAxis;
-
-        // Since we are calling an 'emplace_back' after creating the span,
-        // there is a chance a reallocation happens (if the vector needs to grow), which would make the span point to
-        // deallocated memory. To avoid this, make sure to reserve enough memory in the vector.
-        _axesVector.reserve(axes.size());
-
-#pragma warning(suppress : 26445) // the analyzer doesn't like reference to string_view
-        for (const auto& [axis, value] : axes)
-        {
-            if (axis.length() == TAG_LENGTH)
-            {
-                const auto dwriteFontAxis = DWRITE_FONT_AXIS_VALUE{ DWRITE_MAKE_FONT_AXIS_TAG(til::at(axis, 0), til::at(axis, 1), til::at(axis, 2), til::at(axis, 3)), value };
-                if (dwriteFontAxis.axisTag != DWRITE_FONT_AXIS_TAG_WEIGHT)
-                {
-                    _axesVector.emplace_back(dwriteFontAxis);
-                }
-                else
-                {
-                    weightAxis = dwriteFontAxis;
-                }
-                _didUserSetItalic |= dwriteFontAxis.axisTag == DWRITE_FONT_AXIS_TAG_ITALIC && value == 1;
-            }
-        }
-
-        // Make the span, which has all the axes except the weight
-        _axesVectorWithoutWeight = gsl::make_span(_axesVector);
-
-        // Add the weight axis to the vector if needed
-        if (weightAxis)
-        {
-            _axesVector.emplace_back(weightAxis.value());
-        }
-        _didUserSetAxes = true;
-    }
-}
-
-// Method Description:
-// - Converts a DWRITE_FONT_STRETCH enum into the corresponding float value to
-//   create a DWRITE_FONT_AXIS_VALUE with
-// Arguments:
-// - fontStretch: the old DWRITE_FONT_STRETCH enum to be converted into an axis value
-// Return value:
-// - The float value corresponding to the passed in fontStretch
-float DxFontRenderData::_FontStretchToWidthAxisValue(DWRITE_FONT_STRETCH fontStretch) noexcept
-{
-    // 10 elements from DWRITE_FONT_STRETCH_UNDEFINED (0) to DWRITE_FONT_STRETCH_ULTRA_EXPANDED (9)
-    static constexpr auto fontStretchEnumToVal = std::array{ 100.0f, 50.0f, 62.5f, 75.0f, 87.5f, 100.0f, 112.5f, 125.0f, 150.0f, 200.0f };
-
-    if (gsl::narrow_cast<size_t>(fontStretch) > fontStretchEnumToVal.size())
-    {
-        fontStretch = DWRITE_FONT_STRETCH_NORMAL;
-    }
-
-    return til::at(fontStretchEnumToVal, fontStretch);
-}
-
-// Method Description:
-// - Converts a DWRITE_FONT_STYLE enum into the corresponding float value to
-//   create a DWRITE_FONT_AXIS_VALUE with
-// Arguments:
-// - fontStyle: the old DWRITE_FONT_STYLE enum to be converted into an axis value
-// Return value:
-// - The float value corresponding to the passed in fontStyle
-float DxFontRenderData::_FontStyleToSlantFixedAxisValue(DWRITE_FONT_STYLE fontStyle) noexcept
-{
-    // DWRITE_FONT_STYLE_NORMAL (0), DWRITE_FONT_STYLE_OBLIQUE (1), DWRITE_FONT_STYLE_ITALIC (2)
-    static constexpr auto fontStyleEnumToVal = std::array{ 0.0f, -20.0f, -12.0f };
-
-    // Both DWRITE_FONT_STYLE_OBLIQUE and DWRITE_FONT_STYLE_ITALIC default to having slant.
-    // Though an italic font technically need not have slant (there exist upright ones), the
-    // vast majority of italic fonts are also slanted. Ideally the slant comes from the
-    // 'slnt' value in the STAT or fvar table, or the post table italic angle.
-
-    if (gsl::narrow_cast<size_t>(fontStyle) > fontStyleEnumToVal.size())
-    {
-        fontStyle = DWRITE_FONT_STYLE_NORMAL;
-    }
-
-    return til::at(fontStyleEnumToVal, fontStyle);
-}
-
-// Method Description:
-// - Fill any missing axis values that might be known but were unspecified, such as omitting
-//   the 'wght' axis tag but specifying the old DWRITE_FONT_WEIGHT enum
-// - This function will only be called with a valid IDWriteTextFormat3
-//   (on platforms where IDWriteTextFormat3 is supported)
-// Arguments:
-// - fontWeight: the old DWRITE_FONT_WEIGHT enum to be converted into an axis value
-// - fontStretch: the old DWRITE_FONT_STRETCH enum to be converted into an axis value
-// - fontStyle: the old DWRITE_FONT_STYLE enum to be converted into an axis value
-// - fontSize: the number to convert into an axis value
-// - format: the IDWriteTextFormat3 to get the defined axes from
-// Return value:
-// - The fully formed axes vector
-#pragma warning(suppress : 26429) // the analyzer doesn't detect that our FAIL_FAST_IF_NULL macro \
-    // checks format for nullness
-std::vector<DWRITE_FONT_AXIS_VALUE> DxFontRenderData::GetAxisVector(const DWRITE_FONT_WEIGHT fontWeight,
-                                                                    const DWRITE_FONT_STRETCH fontStretch,
-                                                                    const DWRITE_FONT_STYLE fontStyle,
-                                                                    IDWriteTextFormat3* format)
-{
-    FAIL_FAST_IF_NULL(format);
-
-    const auto axesCount = format->GetFontAxisValueCount();
-    std::vector<DWRITE_FONT_AXIS_VALUE> axesVector;
-    axesVector.resize(axesCount);
-    format->GetFontAxisValues(axesVector.data(), axesCount);
-
-    auto axisTagPresence = AxisTagPresence::None;
-    for (const auto& fontAxisValue : axesVector)
-    {
-        switch (fontAxisValue.axisTag)
-        {
-        case DWRITE_FONT_AXIS_TAG_WEIGHT:
-            WI_SetFlag(axisTagPresence, AxisTagPresence::Weight);
-            break;
-        case DWRITE_FONT_AXIS_TAG_WIDTH:
-            WI_SetFlag(axisTagPresence, AxisTagPresence::Width);
-            break;
-        case DWRITE_FONT_AXIS_TAG_ITALIC:
-            WI_SetFlag(axisTagPresence, AxisTagPresence::Italic);
-            break;
-        case DWRITE_FONT_AXIS_TAG_SLANT:
-            WI_SetFlag(axisTagPresence, AxisTagPresence::Slant);
-            break;
-        }
-    }
-
-    if (WI_IsFlagClear(axisTagPresence, AxisTagPresence::Weight))
-    {
-        axesVector.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_WEIGHT, gsl::narrow<float>(fontWeight) });
-    }
-    if (WI_IsFlagClear(axisTagPresence, AxisTagPresence::Width))
-    {
-        axesVector.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_WIDTH, _FontStretchToWidthAxisValue(fontStretch) });
-    }
-    if (WI_IsFlagClear(axisTagPresence, AxisTagPresence::Italic))
-    {
-        axesVector.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_ITALIC, (fontStyle == DWRITE_FONT_STYLE_ITALIC ? 1.0f : 0.0f) });
-    }
-    if (WI_IsFlagClear(axisTagPresence, AxisTagPresence::Slant))
-    {
-        axesVector.emplace_back(DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_SLANT, _FontStyleToSlantFixedAxisValue(fontStyle) });
-    }
-
-    return axesVector;
+    return !_textFormatAxes[0][0].empty();
 }
 
 // Routine Description:
@@ -707,11 +546,13 @@ std::vector<DWRITE_FONT_AXIS_VALUE> DxFontRenderData::GetAxisVector(const DWRITE
 // - None
 void DxFontRenderData::_BuildFontRenderData(const FontInfoDesired& desired, FontInfo& actual, const int dpi)
 {
-    std::wstring fontLocaleName = UserLocaleName();
     // This is the first attempt to resolve font face after `UpdateFont`.
     // Note that the following line may cause property changes _inside_ `_defaultFontInfo` because the desired font may not exist.
     // See the implementation of `ResolveFontFaceWithFallback` for details.
-    const Microsoft::WRL::ComPtr<IDWriteFontFace1> face = _defaultFontInfo.ResolveFontFaceWithFallback(_dwriteFactory.Get(), fontLocaleName);
+    const auto font = _ResolveFontWithFallback(desired.GetFaceName(), static_cast<DWRITE_FONT_WEIGHT>(desired.GetWeight()), DWRITE_FONT_STYLE_NORMAL);
+
+    Microsoft::WRL::ComPtr<IDWriteFontFace> face;
+    THROW_IF_FAILED(font->CreateFontFace(&face));
 
     DWRITE_FONT_METRICS1 fontMetrics;
     face->GetMetrics(&fontMetrics);
@@ -719,9 +560,6 @@ void DxFontRenderData::_BuildFontRenderData(const FontInfoDesired& desired, Font
     const UINT32 spaceCodePoint = L'M';
     UINT16 spaceGlyphIndex;
     THROW_IF_FAILED(face->GetGlyphIndicesW(&spaceCodePoint, 1, &spaceGlyphIndex));
-
-    INT32 advanceInDesignUnits;
-    THROW_IF_FAILED(face->GetDesignGlyphAdvances(1, &spaceGlyphIndex, &advanceInDesignUnits));
 
     DWRITE_GLYPH_METRICS spaceMetrics = { 0 };
     THROW_IF_FAILED(face->GetDesignGlyphMetrics(&spaceGlyphIndex, 1, &spaceMetrics));
@@ -746,7 +584,7 @@ void DxFontRenderData::_BuildFontRenderData(const FontInfoDesired& desired, Font
     // Now we play trickery with the font size. Scale by the DPI to get the height we expect.
     heightDesired *= (static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));
 
-    const float widthAdvance = static_cast<float>(advanceInDesignUnits) / fontMetrics.designUnitsPerEm;
+    const float widthAdvance = static_cast<float>(spaceMetrics.advanceWidth) / fontMetrics.designUnitsPerEm;
 
     // Use the real pixel height desired by the "em" factor for the width to get the number of pixels
     // we will need per character in width. This will almost certainly result in fractional X-dimension pixels.
@@ -832,14 +670,12 @@ void DxFontRenderData::_BuildFontRenderData(const FontInfoDesired& desired, Font
 
     const COORD scaled = coordSize;
 
-    actual.SetFromEngine(_defaultFontInfo.GetFamilyName(),
+    actual.SetFromEngine(desired.GetFaceName().c_str(),
                          desired.GetFamily(),
-                         DefaultTextFormat()->GetFontWeight(),
+                         desired.GetWeight(),
                          false,
                          scaled,
                          unscaled);
-
-    actual.SetFallback(_defaultFontInfo.GetFallback());
 
     LineMetrics lineMetrics;
     // There is no font metric for the grid line width, so we use a small
@@ -894,31 +730,215 @@ void DxFontRenderData::_BuildFontRenderData(const FontInfoDesired& desired, Font
     _glyphCell = actual.GetSize();
 }
 
-Microsoft::WRL::ComPtr<IDWriteTextFormat> DxFontRenderData::_BuildTextFormat(const DxFontInfo& fontInfo, const std::wstring_view localeName)
+// Routine Description:
+// - Attempts to locate the font given, but then begins falling back if we cannot find it.
+// - We'll try to fall back to Consolas with the given weight/stretch/style first,
+//   then try Consolas again with normal weight/stretch/style,
+//   and if nothing works, then we'll throw an error.
+// Arguments:
+// - dwriteFactory - The DWrite factory to use
+// - localeName - Locale to search for appropriate fonts
+// Return Value:
+// - Smart pointer holding interface reference for queryable font data.
+[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFont> DxFontRenderData::_ResolveFontWithFallback(std::wstring familyName, DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style)
 {
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
-    THROW_IF_FAILED(_dwriteFactory->CreateTextFormat(fontInfo.GetFamilyName().data(),
-                                                     fontInfo.GetNearbyCollection(),
-                                                     fontInfo.GetWeight(),
-                                                     fontInfo.GetStyle(),
-                                                     fontInfo.GetStretch(),
-                                                     _fontSize,
-                                                     localeName.data(),
-                                                     &format));
-
-    // If the OS supports IDWriteTextFormat3, set the font axes
-    ::Microsoft::WRL::ComPtr<IDWriteTextFormat3> format3;
-    if (!FAILED(format->QueryInterface(IID_PPV_ARGS(&format3))))
+    if (familyName.empty())
     {
-        if (_inhibitUserWeight && !_axesVectorWithoutWeight.empty())
+        familyName = L"Consolas";
+    }
+    if (!weight)
+    {
+        weight = DWRITE_FONT_WEIGHT_NORMAL;
+    }
+    if (!style)
+    {
+        style = DWRITE_FONT_STYLE_NORMAL;
+    }
+
+    // First attempt to find exactly what the user asked for.
+    Microsoft::WRL::ComPtr<IDWriteFont> font;
+
+    // GH#10211 - wrap this all up in a try/catch. If the nearby fonts are
+    // corrupted, then we don't want to throw out of this top half of this
+    // method. We still want to fall back to a font that's reasonable, below.
+    try
+    {
+        font = _FindFont(familyName.c_str(), weight, style);
+
+        if (!font)
         {
-            format3->SetFontAxisValues(_axesVectorWithoutWeight.data(), gsl::narrow<uint32_t>(_axesVectorWithoutWeight.size()));
+            // If we missed, try looking a little more by trimming the last word off the requested family name a few times.
+            // Quite often, folks are specifying weights or something in the familyName and it causes failed resolution and
+            // an unexpected error dialog. We theoretically could detect the weight words and convert them, but this
+            // is the quick fix for the majority scenario.
+            // The long/full fix is backlogged to GH#9744
+            // Also this doesn't count as a fallback because we don't want to annoy folks with the warning dialog over
+            // this resolution.
+            while (!font && !familyName.empty())
+            {
+                const auto lastSpace = familyName.find_last_of(UNICODE_SPACE);
+
+                // value is unsigned and npos will be greater than size.
+                // if we didn't find anything to trim, leave.
+                if (lastSpace >= familyName.size())
+                {
+                    break;
+                }
+
+                // trim string down to just before the found space
+                // (space found at 6... trim from 0 for 6 length will give us 0-5 as the new string)
+                familyName = familyName.substr(0, lastSpace);
+
+                // Try to find it with the shortened family name
+                font = _FindFont(familyName.c_str(), weight, style);
+            }
         }
-        else if (!_inhibitUserWeight && !_axesVector.empty())
+    }
+    CATCH_LOG();
+
+    // Alright, if our quick shot at trimming didn't work either...
+    // move onto looking up a font from our hardcoded list of fonts
+    // that should really always be available.
+    if (!font)
+    {
+        for (const auto fallbackFont : FALLBACK_FONT_FACES)
         {
-            format3->SetFontAxisValues(_axesVector.data(), gsl::narrow<uint32_t>(_axesVector.size()));
+            // With these fonts, don't attempt the nearby lookup. We're looking
+            // for system fonts only. If one of the nearby fonts is causing us
+            // problems (like in GH#10211), then we don't want to go anywhere
+
+            // near it in this part.
+            font = _FindFont(fallbackFont, weight, style);
+            if (font)
+            {
+                break;
+            }
+
+            font = _FindFont(fallbackFont, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL);
+            if (font)
+            {
+                break;
+            }
         }
     }
 
-    return format;
+    THROW_HR_IF_NULL(E_FAIL, font);
+    return font;
+}
+
+// Routine Description:
+// - Locates a suitable font face from the given information
+// Arguments:
+// - dwriteFactory - The DWrite factory to use
+// - localeName - Locale to search for appropriate fonts
+// Return Value:
+// - Smart pointer holding interface reference for queryable font data.
+[[nodiscard]] Microsoft::WRL::ComPtr<IDWriteFont> DxFontRenderData::_FindFont(const wchar_t* familyName, DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style)
+{
+    Microsoft::WRL::ComPtr<IDWriteFont> font;
+
+    Microsoft::WRL::ComPtr<IDWriteFontCollection> fontCollection;
+    THROW_IF_FAILED(_dwriteFactory->GetSystemFontCollection(&fontCollection, false));
+
+    UINT32 familyIndex;
+    BOOL familyExists;
+    THROW_IF_FAILED(fontCollection->FindFamilyName(familyName, &familyIndex, &familyExists));
+
+    // If the system collection missed, try the files sitting next to our binary.
+    if (!familyExists)
+    {
+        // May be null on OS below Windows 10. If null, just skip the attempt.
+        if (const auto nearbyCollection = _NearbyCollection())
+        {
+            THROW_IF_FAILED(nearbyCollection->FindFamilyName(familyName, &familyIndex, &familyExists));
+            fontCollection = nearbyCollection;
+        }
+    }
+
+    if (familyExists)
+    {
+        Microsoft::WRL::ComPtr<IDWriteFontFamily> fontFamily;
+        THROW_IF_FAILED(fontCollection->GetFontFamily(familyIndex, &fontFamily));
+        THROW_IF_FAILED(fontFamily->GetFirstMatchingFont(weight, DWRITE_FONT_STRETCH_NORMAL, style, &font));
+    }
+
+    return font;
+}
+
+// Routine Description:
+// - Creates a DirectWrite font collection of font files that are sitting next to the running
+//   binary (in the same directory as the EXE).
+// Arguments:
+// - dwriteFactory - The DWrite factory to use
+// Return Value:
+// - DirectWrite font collection. May be null if one cannot be created.
+[[nodiscard]] IDWriteFontCollection* DxFontRenderData::_NearbyCollection()
+{
+    if (_nearbyFontCollection)
+    {
+        return _nearbyFontCollection.Get();
+    }
+
+    // The convenience interfaces for loading fonts from files
+    // are only available on Windows 10+.
+    ::Microsoft::WRL::ComPtr<IDWriteFactory6> factory6;
+    if (FAILED(_dwriteFactory->QueryInterface<IDWriteFactory6>(&factory6)))
+    {
+        return nullptr;
+    }
+
+    ::Microsoft::WRL::ComPtr<IDWriteFontCollection1> systemFontCollection;
+    THROW_IF_FAILED(factory6->GetSystemFontCollection(false, &systemFontCollection, 0));
+
+    ::Microsoft::WRL::ComPtr<IDWriteFontSet> systemFontSet;
+    THROW_IF_FAILED(systemFontCollection->GetFontSet(&systemFontSet));
+
+    ::Microsoft::WRL::ComPtr<IDWriteFontSetBuilder2> fontSetBuilder2;
+    THROW_IF_FAILED(factory6->CreateFontSetBuilder(&fontSetBuilder2));
+
+    THROW_IF_FAILED(fontSetBuilder2->AddFontSet(systemFontSet.Get()));
+
+    // Magic static so we only attempt to grovel the hard disk once no matter how many instances
+    // of the font collection itself we require.
+    static const auto knownPaths = s_GetNearbyFonts();
+    for (auto& p : knownPaths)
+    {
+        fontSetBuilder2->AddFontFile(p.c_str());
+    }
+
+    ::Microsoft::WRL::ComPtr<IDWriteFontSet> fontSet;
+    THROW_IF_FAILED(fontSetBuilder2->CreateFontSet(&fontSet));
+
+    ::Microsoft::WRL::ComPtr<IDWriteFontCollection1> fontCollection;
+    THROW_IF_FAILED(factory6->CreateFontCollectionFromFontSet(fontSet.Get(), &fontCollection));
+
+    _nearbyFontCollection = fontCollection;
+    return _nearbyFontCollection.Get();
+}
+
+// Routine Description:
+// - Digs through the directory that the current executable is running within to find
+//   any TTF files sitting next to it.
+// Arguments:
+// - <none>
+// Return Value:
+// - Iterable collection of filesystem paths, one per font file that was found
+[[nodiscard]] std::vector<std::filesystem::path> DxFontRenderData::s_GetNearbyFonts()
+{
+    std::vector<std::filesystem::path> paths;
+
+    // Find the directory we're running from then enumerate all the TTF files
+    // sitting next to us.
+    const std::filesystem::path module{ wil::GetModuleFileNameW<std::wstring>(nullptr) };
+    const auto folder{ module.parent_path() };
+
+    for (const auto& p : std::filesystem::directory_iterator(folder))
+    {
+        if (til::ends_with_insensitive_ascii(p.path().native(), L".ttf"))
+        {
+            paths.push_back(p.path());
+        }
+    }
+
+    return paths;
 }

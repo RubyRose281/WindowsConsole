@@ -171,7 +171,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 THROW_IF_FAILED(fontFamily->GetFamilyNames(localizedFamilyNames.put()));
 
                 // construct a font entry for tracking
-                if (const auto fontEntry{ _GetFont(localizedFamilyNames) })
+                if (auto fontEntry{ _GetFont(localizedFamilyNames) })
                 {
                     // check if the font is monospaced
                     try

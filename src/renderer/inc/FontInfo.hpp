@@ -45,7 +45,6 @@ public:
                        const bool fSetDefaultRasterFont,
                        const COORD coordSize,
                        const COORD coordSizeUnscaled) noexcept;
-    bool GetFallback() const noexcept;
     void SetFallback(const bool didFallback) noexcept;
     void ValidateFont() noexcept;
 
