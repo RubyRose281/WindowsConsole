@@ -45,9 +45,9 @@ cbuffer ConstBuffer : register(b0)
     uint2 cellSize;
     uint2 underlinePos;
     uint2 strikethroughPos;
+    uint2 cursorColor; // x: foreground, y: background
+    uint2 selectionColor; // x: foreground, y: background
     uint backgroundColor;
-    uint cursorColor;
-    uint selectionColor;
     uint useClearType;
 };
 StructuredBuffer<Cell> cells : register(t0);
@@ -93,16 +93,27 @@ float4 main(float4 pos: SV_Position): SV_Target
     float4 color = decodeRGBA(cell.color.y);
     float4 fg = decodeRGBA(cell.color.x);
 
+    [branch] if (cell.flags & CellFlags_Selected)
+    {
+        // The selection color asserts itself over the attributes.
+        color = decodeRGBA(selectionColor.y);
+        fg = decodeRGBA(selectionColor.x);
+    }
+
     // Layer 1 (optional):
     // Colored cursors are drawn "in between" the background color and the text of a cell.
     [branch] if (cell.flags & CellFlags_Cursor)
     {
-        [flatten] if (cursorColor != INVALID_COLOR)
+        [flatten] if (cursorColor.y != INVALID_COLOR)
         {
             // The cursor texture is stored at the top-left-most glyph cell.
             // Cursor pixels are either entirely transparent or opaque.
             // --> We can just use .a as a mask to flip cursor pixels on or off.
-            color = alphaBlendPremultiplied(color, decodeRGBA(cursorColor) * glyphs[cellPos].a);
+            color = alphaBlendPremultiplied(color, decodeRGBA(cursorColor.y) * glyphs[cellPos].a);
+
+            // The cursor foreground color should apply to all "foreground" things drawn in the cell;
+            // this includes grid lines!
+            fg = alphaBlendPremultiplied(fg, decodeRGBA(cursorColor.x) * glyphs[cellPos].a);
         }
     }
 
@@ -165,17 +176,10 @@ float4 main(float4 pos: SV_Position): SV_Target
     // Uncolored cursors are used as a mask that inverts the cells color.
     [branch] if (cell.flags & CellFlags_Cursor)
     {
-        [flatten] if (cursorColor == INVALID_COLOR && glyphs[cellPos].a != 0)
+        [flatten] if (cursorColor.y == INVALID_COLOR && glyphs[cellPos].a != 0)
         {
             color = float4(1 - color.rgb, 1);
         }
-    }
-
-    // Layer 4:
-    // The current selection is drawn semi-transparent on top.
-    [branch] if (cell.flags & CellFlags_Selected)
-    {
-        color = alphaBlendPremultiplied(color, decodeRGBA(selectionColor));
     }
 
     return color;

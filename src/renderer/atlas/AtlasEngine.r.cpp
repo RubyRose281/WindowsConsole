@@ -130,8 +130,10 @@ void AtlasEngine::_updateConstantBuffer() const noexcept
     data.strikethroughPos.x = _r.strikethroughPos;
     data.strikethroughPos.y = _r.strikethroughPos + _r.lineThickness;
     data.backgroundColor = _r.backgroundColor;
-    data.cursorColor = _r.cursorOptions.cursorColor;
-    data.selectionColor = _r.selectionColor;
+    data.cursorColor.x = _r.cursorOptions.cursorForegroundColor;
+    data.cursorColor.y = _r.cursorOptions.cursorBackgroundColor;
+    data.selectionColor.x = _r.selectionForegroundColor;
+    data.selectionColor.y = _r.selectionBackgroundColor;
     data.useClearType = useClearType;
 #pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function '...' which may throw exceptions (f.6).
     _r.deviceContext->UpdateSubresource(_r.constantBuffer.get(), 0, nullptr, &data, 0, 0);

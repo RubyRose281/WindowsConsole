@@ -250,7 +250,8 @@ try
         }
         if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Settings))
         {
-            _r.selectionColor = _api.selectionColor;
+            _r.selectionBackgroundColor = _api.selectionBackgroundColor;
+            _r.selectionForegroundColor = _api.selectionForegroundColor;
             WI_SetFlag(_r.invalidations, RenderInvalidations::ConstBuffer);
         }
 
@@ -531,6 +532,7 @@ try
     {
         const CachedCursorOptions cachedOptions{
             gsl::narrow_cast<u32>(options.fUseColor ? options.cursorColor | 0xff000000 : INVALID_COLOR),
+            gsl::narrow_cast<u32>(options.fUseColor ? (til::color::is_bright(options.cursorColor) ? 0xff000000 : 0xffffffff) : INVALID_COLOR),
             gsl::narrow_cast<u16>(options.cursorType),
             gsl::narrow_cast<u8>(options.ulCursorHeightPercent),
         };

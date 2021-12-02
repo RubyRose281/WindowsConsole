@@ -197,6 +197,12 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
 
             return wss.str();
         }
+
+        _TIL_INLINEPREFIX static bool is_bright(til::color c)
+        {
+            auto brightness = (c.r * 299 + c.g * 587 + c.b * 114) / 1000;
+            return brightness > 128;
+        }
     };
 #pragma warning(pop)
 }

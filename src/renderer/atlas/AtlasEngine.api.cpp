@@ -367,10 +367,12 @@ void AtlasEngine::SetRetroTerminalEffect(bool enable) noexcept
 
 void AtlasEngine::SetSelectionBackground(const COLORREF color, const float alpha) noexcept
 {
-    const u32 selectionColor = (color & 0xffffff) | gsl::narrow_cast<u32>(std::lroundf(alpha * 255.0f)) << 24;
-    if (_api.selectionColor != selectionColor)
+    // alpha is ignored
+    const u32 selectionBackgroundColor = (color & 0xffffff) | 0xff000000;
+    if (_api.selectionBackgroundColor != selectionBackgroundColor)
     {
-        _api.selectionColor = selectionColor;
+        _api.selectionBackgroundColor = selectionBackgroundColor;
+        _api.selectionForegroundColor = til::color::is_bright(color) ? 0xff000000 : 0xffffffff;
         WI_SetFlag(_api.invalidations, ApiInvalidations::Settings);
     }
 }
