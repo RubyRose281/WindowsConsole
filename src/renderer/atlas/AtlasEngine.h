@@ -3,9 +3,15 @@
 
 #pragma once
 
+#define ATLAS_D2D_SOFTWARE_RENDERING 1
+
 #include <d2d1.h>
-#include <d3d11_1.h>
+#include <d3d12.h>
 #include <dwrite_3.h>
+
+#if ATLAS_D2D_SOFTWARE_RENDERING
+#include <wincodec.h>
+#endif
 
 #include "../../renderer/inc/IRenderEngine.hpp"
 
@@ -15,6 +21,7 @@ namespace Microsoft::Console::Render
     {
     public:
         explicit AtlasEngine();
+        ~AtlasEngine() override;
 
         AtlasEngine(const AtlasEngine&) = delete;
         AtlasEngine& operator=(const AtlasEngine&) = delete;
@@ -628,7 +635,7 @@ namespace Microsoft::Console::Render
         void _processGlyphQueue();
         void _drawGlyph(const AtlasQueueItem& item) const;
         void _drawCursor();
-        void _copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, uint32_t copyFlags = 0) const noexcept;
+        void _copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, uint32_t copyFlags = 0) const;
 
         static constexpr bool debugGlyphGenerationPerformance = false;
         static constexpr bool debugGeneralPerformance = false || debugGlyphGenerationPerformance;
@@ -644,6 +651,10 @@ namespace Microsoft::Console::Render
 
         struct StaticResources
         {
+#if ATLAS_D2D_SOFTWARE_RENDERING
+            wil::unique_couninitialize_call couninitialize{ false };
+            wil::com_ptr<IWICImagingFactory> wicFactory;
+#endif
             wil::com_ptr<ID2D1Factory> d2dFactory;
             wil::com_ptr<IDWriteFactory1> dwriteFactory;
             wil::com_ptr<IDWriteFontFallback> systemFontFallback;
@@ -660,21 +671,31 @@ namespace Microsoft::Console::Render
         struct Resources
         {
             // D3D resources
-            wil::com_ptr<ID3D11Device> device;
-            wil::com_ptr<ID3D11DeviceContext1> deviceContext;
-            wil::com_ptr<IDXGISwapChain1> swapChain;
+            wil::com_ptr<ID3D12Device> device;
+            wil::com_ptr<ID3D12CommandQueue> commandQueue;
+            wil::com_ptr<ID3D12CommandAllocator> commandAllocator;
+            wil::com_ptr<ID3D12GraphicsCommandList> commandList;
+            wil::com_ptr<ID3D12RootSignature> rootSignature;
+            wil::com_ptr<ID3D12PipelineState> pipelineState;
+            wil::com_ptr<IDXGISwapChain3> swapChain;
             wil::unique_handle frameLatencyWaitableObject;
-            wil::com_ptr<ID3D11RenderTargetView> renderTargetView;
+            wil::com_ptr<ID3D12DescriptorHeap> renderTargetViewHeap;
+            wil::com_ptr<ID3D12Resource> renderTargetView[2];
+            u32 frameIndex = 0;
             wil::com_ptr<ID3D11VertexShader> vertexShader;
             wil::com_ptr<ID3D11PixelShader> pixelShader;
-            wil::com_ptr<ID3D11Buffer> constantBuffer;
-            wil::com_ptr<ID3D11Buffer> cellBuffer;
+            wil::com_ptr<ID3D12Resource> constantBuffer;
+            wil::com_ptr<ID3D12Resource> cellBuffer;
             wil::com_ptr<ID3D11ShaderResourceView> cellView;
 
             // D2D resources
             wil::com_ptr<ID3D11Texture2D> atlasBuffer;
             wil::com_ptr<ID3D11ShaderResourceView> atlasView;
+#if ATLAS_D2D_SOFTWARE_RENDERING
+            wil::com_ptr<IWICBitmap> atlasScratchpad;
+#else
             wil::com_ptr<ID3D11Texture2D> atlasScratchpad;
+#endif
             wil::com_ptr<ID2D1RenderTarget> d2dRenderTarget;
             wil::com_ptr<ID2D1Brush> brush;
             wil::com_ptr<IDWriteTextFormat> textFormats[2][2];

@@ -18,12 +18,15 @@
 
 #include <d2d1.h>
 #include <d3d11_1.h>
+#include <d3d11on12.h>
+#include <d3d12.h>
 #include <d3dcompiler.h>
-#include <dwrite_3.h>
 #include <dcomp.h>
-#include <dxgi1_3.h>
+#include <dwrite_3.h>
+#include <dxgi1_4.h>
 #include <dxgidebug.h>
 #include <VersionHelpers.h>
+#include <wincodec.h>
 
 #include <gsl/gsl_util>
 #include <gsl/pointers>

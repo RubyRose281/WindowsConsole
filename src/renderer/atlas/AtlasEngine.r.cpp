@@ -4,6 +4,8 @@
 #include "pch.h"
 #include "AtlasEngine.h"
 
+#include <fstream>
+
 #include "dwrite.h"
 
 // #### NOTE ####
@@ -48,18 +50,81 @@ try
     }
 
     {
-#pragma warning(suppress : 26494) // Variable 'mapped' is uninitialized. Always initialize an object (type.5).
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        THROW_IF_FAILED(_r.deviceContext->Map(_r.cellBuffer.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
-        assert(mapped.RowPitch >= _r.cells.size() * sizeof(Cell));
-        memcpy(mapped.pData, _r.cells.data(), _r.cells.size() * sizeof(Cell));
-        _r.deviceContext->Unmap(_r.cellBuffer.get(), 0);
+        D3D12_RANGE readRange{};
+        void* data;
+        THROW_IF_FAILED(_r.cellBuffer->Map(0, &readRange, &data));
+        memcpy(data, _r.cells.data(), _r.cells.size() * sizeof(Cell));
+        _r.cellBuffer->Unmap(0, nullptr);
     }
 
-    // After Present calls, the back buffer needs to explicitly be
-    // re-bound to the D3D11 immediate context before it can be used again.
-    _r.deviceContext->OMSetRenderTargets(1, _r.renderTargetView.addressof(), nullptr);
-    _r.deviceContext->Draw(3, 0);
+    {
+        _r.deviceContext->VSSetShader(_r.vertexShader.get(), nullptr, 0);
+        _r.deviceContext->PSSetShader(_r.pixelShader.get(), nullptr, 0);
+
+        // Our vertex shader uses a trick from Bill Bilodeau published in
+        // "Vertex Shader Tricks" at GDC14 to draw a fullscreen triangle
+        // without vertex/index buffers. This prepares our context for this.
+        _r.commandList->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
+        _r.commandList->IASetIndexBuffer(nullptr);
+        _r.commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        _r.deviceContext->PSSetConstantBuffers(0, 1, _r.constantBuffer.addressof());
+
+        const std::array resources{ _r.cellView.get(), _r.atlasView.get() };
+        _r.deviceContext->PSSetShaderResources(0, gsl::narrow_cast<UINT>(resources.size()), resources.data());
+
+        // After Present calls, the back buffer needs to explicitly be
+        // re-bound to the D3D11 immediate context before it can be used again.
+        _r.deviceContext->OMSetRenderTargets(1, _r.renderTargetView.addressof(), nullptr);
+        _r.deviceContext->Draw(3, 0);
+
+        // Command list allocators can only be reset when the associated
+        // command lists have finished execution on the GPU; apps should use
+        // fences to determine GPU execution progress.
+        THROW_IF_FAILED(_r.commandAllocator->Reset());
+
+        // However, when ExecuteCommandList() is called on a particular command
+        // list, that command list can then be reset at any time and must be before
+        // re-recording.
+        THROW_IF_FAILED(_r.commandList->Reset(_r.commandAllocator.get(), _r.pipelineState.get()));
+
+        // Set necessary state.
+
+        // Indicate that the back buffer will be used as a render target.
+        D3D12_RESOURCE_BARRIER barrier;
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        barrier.Transition.pResource = _r.renderTargetView[_r.frameIndex].get();
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        _r.commandList->ResourceBarrier(1, &barrier);
+
+        // Record commands.
+        _r.commandList->SetGraphicsRootSignature(_r.rootSignature.get());
+
+        _r.commandList->IASetVertexBuffers(0, 0, nullptr);
+        _r.commandList->IASetIndexBuffer(nullptr);
+        _r.commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        D3D12_VIEWPORT viewport{};
+        viewport.Width = static_cast<float>(_api.sizeInPixel.x); // TODO
+        viewport.Height = static_cast<float>(_api.sizeInPixel.y);
+        _r.commandList->RSSetViewports(1, &viewport);
+
+        auto handle = _r.renderTargetViewHeap->GetCPUDescriptorHandleForHeapStart();
+        handle.ptr += _r.frameIndex * _r.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        _r.commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+
+        _r.commandList->DrawInstanced(3, 1, 0, 0);
+
+        // Indicate that the back buffer will now be used to present.
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+        _r.commandList->ResourceBarrier(1, &barrier);
+
+        THROW_IF_FAILED(_r.commandList->Close());
+    }
 
     // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
     // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
@@ -71,16 +136,6 @@ try
     // ---> No need to call IDXGISwapChain1::Present1.
     //      TODO: Would IDXGISwapChain1::Present1 and its dirty rects have benefits for remote desktop?
     THROW_IF_FAILED(_r.swapChain->Present(1, 0));
-
-    // On some GPUs with tile based deferred rendering (TBDR) architectures, binding
-    // RenderTargets that already have contents in them (from previous rendering) incurs a
-    // cost for having to copy the RenderTarget contents back into tile memory for rendering.
-    //
-    // On Windows 10 with DXGI_SWAP_EFFECT_FLIP_DISCARD we get this for free.
-    if (!_sr.isWindows10OrGreater)
-    {
-        _r.deviceContext->DiscardView(_r.renderTargetView.get());
-    }
 
     return S_OK;
 }
@@ -94,47 +149,36 @@ CATCH_RETURN()
 
 void AtlasEngine::_setShaderResources() const
 {
-    _r.deviceContext->VSSetShader(_r.vertexShader.get(), nullptr, 0);
-    _r.deviceContext->PSSetShader(_r.pixelShader.get(), nullptr, 0);
-
-    // Our vertex shader uses a trick from Bill Bilodeau published in
-    // "Vertex Shader Tricks" at GDC14 to draw a fullscreen triangle
-    // without vertex/index buffers. This prepares our context for this.
-    _r.deviceContext->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
-    _r.deviceContext->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-    _r.deviceContext->IASetInputLayout(nullptr);
-    _r.deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    _r.deviceContext->PSSetConstantBuffers(0, 1, _r.constantBuffer.addressof());
-
-    const std::array resources{ _r.cellView.get(), _r.atlasView.get() };
-    _r.deviceContext->PSSetShaderResources(0, gsl::narrow_cast<UINT>(resources.size()), resources.data());
 }
 
 void AtlasEngine::_updateConstantBuffer() const noexcept
 {
     const auto useClearType = _api.realizedAntialiasingMode == D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE;
 
-    ConstBuffer data;
-    data.viewport.x = 0;
-    data.viewport.y = 0;
-    data.viewport.z = static_cast<float>(_r.cellCount.x * _r.cellSize.x);
-    data.viewport.w = static_cast<float>(_r.cellCount.y * _r.cellSize.y);
-    DWrite_GetGammaRatios(_r.gamma, data.gammaRatios);
-    data.enhancedContrast = useClearType ? _r.cleartypeEnhancedContrast : _r.grayscaleEnhancedContrast;
-    data.cellCountX = _r.cellCount.x;
-    data.cellSize.x = _r.cellSize.x;
-    data.cellSize.y = _r.cellSize.y;
-    data.underlinePos.x = _r.underlinePos;
-    data.underlinePos.y = _r.underlinePos + _r.lineThickness;
-    data.strikethroughPos.x = _r.strikethroughPos;
-    data.strikethroughPos.y = _r.strikethroughPos + _r.lineThickness;
-    data.backgroundColor = _r.backgroundColor;
-    data.cursorColor = _r.cursorOptions.cursorColor;
-    data.selectionColor = _r.selectionColor;
-    data.useClearType = useClearType;
-#pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function '...' which may throw exceptions (f.6).
-    _r.deviceContext->UpdateSubresource(_r.constantBuffer.get(), 0, nullptr, &data, 0, 0);
+    ConstBuffer buffer;
+    buffer.viewport.x = 0;
+    buffer.viewport.y = 0;
+    buffer.viewport.z = static_cast<float>(_r.cellCount.x * _r.cellSize.x);
+    buffer.viewport.w = static_cast<float>(_r.cellCount.y * _r.cellSize.y);
+    DWrite_GetGammaRatios(_r.gamma, buffer.gammaRatios);
+    buffer.enhancedContrast = useClearType ? _r.cleartypeEnhancedContrast : _r.grayscaleEnhancedContrast;
+    buffer.cellCountX = _r.cellCount.x;
+    buffer.cellSize.x = _r.cellSize.x;
+    buffer.cellSize.y = _r.cellSize.y;
+    buffer.underlinePos.x = _r.underlinePos;
+    buffer.underlinePos.y = _r.underlinePos + _r.lineThickness;
+    buffer.strikethroughPos.x = _r.strikethroughPos;
+    buffer.strikethroughPos.y = _r.strikethroughPos + _r.lineThickness;
+    buffer.backgroundColor = _r.backgroundColor;
+    buffer.cursorColor = _r.cursorOptions.cursorColor;
+    buffer.selectionColor = _r.selectionColor;
+    buffer.useClearType = useClearType;
+
+    D3D12_RANGE readRange{};
+    void* data;
+    THROW_IF_FAILED(_r.constantBuffer->Map(0, &readRange, &data));
+    memcpy(data, &buffer, sizeof(buffer));
+    _r.constantBuffer->Unmap(0, nullptr);
 }
 
 void AtlasEngine::_adjustAtlasSize()
@@ -202,7 +246,9 @@ void AtlasEngine::_adjustAtlasSize()
         desc.ArraySize = 1;
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc = { 1, 0 };
+        desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         THROW_IF_FAILED(_r.device->CreateTexture2D(&desc, nullptr, atlasBuffer.addressof()));
         THROW_IF_FAILED(_r.device->CreateShaderResourceView(atlasBuffer.get(), nullptr, atlasView.addressof()));
     }
@@ -246,7 +292,20 @@ void AtlasEngine::_reserveScratchpadSize(u16 minWidth)
     _r.d2dRenderTarget.reset();
     _r.atlasScratchpad.reset();
 
+#if ATLAS_D2D_SOFTWARE_RENDERING
     {
+        D2D1_RENDER_TARGET_PROPERTIES props{};
+        props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+        props.pixelFormat = { DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED };
+        props.dpiX = static_cast<float>(_r.dpi);
+        props.dpiY = static_cast<float>(_r.dpi);
+        THROW_IF_FAILED(_sr.wicFactory->CreateBitmap(_r.cellSize.x * newWidth, _r.cellSize.y, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, _r.atlasScratchpad.put()));
+        THROW_IF_FAILED(_sr.d2dFactory->CreateWicBitmapRenderTarget(_r.atlasScratchpad.get(), &props, _r.d2dRenderTarget.put()));
+    }
+#else
+    {
+        const auto surface = _r.atlasScratchpad.query<IDXGISurface>();
+
         D3D11_TEXTURE2D_DESC desc{};
         desc.Width = _r.cellSize.x * newWidth;
         desc.Height = _r.cellSize.y;
@@ -256,12 +315,6 @@ void AtlasEngine::_reserveScratchpadSize(u16 minWidth)
         desc.SampleDesc = { 1, 0 };
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
         THROW_IF_FAILED(_r.device->CreateTexture2D(&desc, nullptr, _r.atlasScratchpad.put()));
-    }
-    {
-        const auto surface = _r.atlasScratchpad.query<IDXGISurface>();
-
-        wil::com_ptr<IDWriteRenderingParams1> renderingParams;
-        DWrite_GetRenderParams(_sr.dwriteFactory.get(), &_r.gamma, &_r.cleartypeEnhancedContrast, &_r.grayscaleEnhancedContrast, renderingParams.addressof());
 
         D2D1_RENDER_TARGET_PROPERTIES props{};
         props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
@@ -269,6 +322,11 @@ void AtlasEngine::_reserveScratchpadSize(u16 minWidth)
         props.dpiX = static_cast<float>(_r.dpi);
         props.dpiY = static_cast<float>(_r.dpi);
         THROW_IF_FAILED(_sr.d2dFactory->CreateDxgiSurfaceRenderTarget(surface.get(), &props, _r.d2dRenderTarget.put()));
+    }
+#endif
+    {
+        wil::com_ptr<IDWriteRenderingParams1> renderingParams;
+        DWrite_GetRenderParams(_sr.dwriteFactory.get(), &_r.gamma, &_r.cleartypeEnhancedContrast, &_r.grayscaleEnhancedContrast, renderingParams.addressof());
 
         // We don't really use D2D for anything except DWrite, but it
         // can't hurt to ensure that everything it does is pixel aligned.
@@ -305,8 +363,18 @@ void AtlasEngine::_processGlyphQueue()
     _r.glyphQueue.clear();
 }
 
+static std::ofstream file{ "R:/out.txt" };
+
 void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
 {
+    const auto beg = std::chrono::high_resolution_clock::now();
+    const auto defer = wil::scope_exit([&]() {
+        const auto end = std::chrono::high_resolution_clock::now();
+        const auto out = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()) + '\n';
+        file << out;
+        file.flush();
+    });
+
     const auto key = item.key->data();
     const auto value = item.value->data();
     const auto coords = &value->coords[0];
@@ -354,7 +422,7 @@ void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
         //
         // Since our shader only draws whatever is in the atlas, and since we don't replace glyph tiles that are in use,
         // we can safely (?) tell the GPU that we don't overwrite parts of our atlas that are in use.
-        _copyScratchpadTile(i, coords[i], D3D11_COPY_NO_OVERWRITE);
+        _copyScratchpadTile(i, coords[i], 0);
     }
 }
 
@@ -424,8 +492,37 @@ void AtlasEngine::_drawCursor()
     _copyScratchpadTile(0, {});
 }
 
-void AtlasEngine::_copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, uint32_t copyFlags) const noexcept
+void AtlasEngine::_copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, uint32_t copyFlags) const
 {
+#if ATLAS_D2D_SOFTWARE_RENDERING
+    WICRect rect;
+    rect.X = scratchpadIndex * _r.cellSize.x;
+    rect.Y = 0;
+    rect.Width = _r.cellSize.x;
+    rect.Height = _r.cellSize.y;
+
+    D3D11_BOX box;
+    box.left = target.x;
+    box.top = target.y;
+    box.front = 0;
+    box.right = target.x + _r.cellSize.x;
+    box.bottom = target.y + _r.cellSize.y;
+    box.back = 1;
+
+    wil::com_ptr<IWICBitmapLock> lock;
+    THROW_IF_FAILED(_r.atlasScratchpad->Lock(&rect, WICBitmapLockRead, lock.addressof()));
+
+    UINT stride;
+    THROW_IF_FAILED(lock->GetStride(&stride));
+
+    UINT size;
+    WICInProcPointer src;
+    THROW_IF_FAILED(lock->GetDataPointer(&size, &src));
+
+    _r.deviceContext->UpdateSubresource1(_r.atlasBuffer.get(), 0, &box, src, stride, 0, copyFlags);
+
+#else
+
     D3D11_BOX box;
     box.left = scratchpadIndex * _r.cellSize.x;
     box.top = 0;
@@ -435,4 +532,5 @@ void AtlasEngine::_copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, ui
     box.back = 1;
 #pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function '...' which may throw exceptions (f.6).
     _r.deviceContext->CopySubresourceRegion1(_r.atlasBuffer.get(), 0, target.x, target.y, 0, _r.atlasScratchpad.get(), 0, &box, copyFlags);
+#endif
 }

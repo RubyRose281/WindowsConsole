@@ -170,6 +170,11 @@ private:
 #pragma warning(suppress : 26455) // Default constructor may not throw. Declare it 'noexcept' (f.6).
 AtlasEngine::AtlasEngine()
 {
+#if ATLAS_D2D_SOFTWARE_RENDERING
+    _sr.couninitialize = wil::CoInitializeEx();
+    _sr.wicFactory = wil::CoCreateInstance<IWICImagingFactory>(CLSID_WICImagingFactory);
+#endif
+
 #ifdef NDEBUG
     THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, _sr.d2dFactory.addressof()));
 #else
@@ -203,6 +208,11 @@ AtlasEngine::AtlasEngine()
         });
     }
 #endif
+}
+
+AtlasEngine::~AtlasEngine()
+{
+    _releaseSwapChain();
 }
 
 #pragma region IRenderEngine
@@ -257,50 +267,6 @@ try
         // Equivalent to InvalidateAll().
         _api.invalidatedRows = invalidatedRowsAll;
     }
-
-#ifndef NDEBUG
-    if (const auto invalidationTime = _sr.sourceCodeInvalidationTime.load(std::memory_order_relaxed); invalidationTime != INT64_MAX && invalidationTime <= std::chrono::steady_clock::now().time_since_epoch().count())
-    {
-        _sr.sourceCodeInvalidationTime.store(INT64_MAX, std::memory_order_relaxed);
-
-        try
-        {
-            static const auto compile = [](const std::filesystem::path& path, const char* target) {
-                wil::com_ptr<ID3DBlob> error;
-                wil::com_ptr<ID3DBlob> blob;
-                const auto hr = D3DCompileFromFile(
-                    /* pFileName   */ path.c_str(),
-                    /* pDefines    */ nullptr,
-                    /* pInclude    */ D3D_COMPILE_STANDARD_FILE_INCLUDE,
-                    /* pEntrypoint */ "main",
-                    /* pTarget     */ target,
-                    /* Flags1      */ D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS,
-                    /* Flags2      */ 0,
-                    /* ppCode      */ blob.addressof(),
-                    /* ppErrorMsgs */ error.addressof());
-
-                if (error)
-                {
-                    std::thread t{ [error = std::move(error)]() noexcept {
-                        MessageBoxA(nullptr, static_cast<const char*>(error->GetBufferPointer()), "Compilation error", MB_ICONERROR | MB_OK);
-                    } };
-                    t.detach();
-                }
-
-                THROW_IF_FAILED(hr);
-                return blob;
-            };
-
-            const auto vs = compile(_sr.sourceDirectory / L"shader_vs.hlsl", "vs_4_1");
-            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "ps_4_1");
-
-            THROW_IF_FAILED(_r.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, _r.vertexShader.put()));
-            THROW_IF_FAILED(_r.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.pixelShader.put()));
-            _setShaderResources();
-        }
-        CATCH_LOG()
-    }
-#endif
 
     if (_api.invalidatedRows == invalidatedRowsAll)
     {
@@ -672,74 +638,82 @@ void AtlasEngine::_createResources()
             }
         }
     }
+
+    // Enable the D3D12 debug layer.
+    {
+        wil::com_ptr<ID3D12Debug> debugController;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(debugController.addressof()))))
+        {
+            debugController->EnableDebugLayer();
+        }
+    }
 #endif // NDEBUG
 
     // D3D device setup (basically a D3D class factory)
     {
-        wil::com_ptr<ID3D11DeviceContext> deviceContext;
-
-        // Why D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS:
-        // This flag prevents the driver from creating a large thread pool for things like shader computations
-        // that would be advantageous for games. For us this has only a minimal performance benefit,
-        // but comes with a large memory usage overhead. At the time of writing the Nvidia
-        // driver launches $cpu_thread_count more worker threads without this flag.
-        static constexpr std::array driverTypes{
-            std::pair{ D3D_DRIVER_TYPE_HARDWARE, D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS },
-            std::pair{ D3D_DRIVER_TYPE_WARP, static_cast<D3D11_CREATE_DEVICE_FLAG>(0) },
-        };
-        static constexpr std::array featureLevels{
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-        };
-
-        HRESULT hr = S_OK;
-        for (const auto& [driverType, additionalFlags] : driverTypes)
-        {
-            hr = D3D11CreateDevice(
-                /* pAdapter */ nullptr,
-                /* DriverType */ driverType,
-                /* Software */ nullptr,
-                /* Flags */ deviceFlags | additionalFlags,
-                /* pFeatureLevels */ featureLevels.data(),
-                /* FeatureLevels */ gsl::narrow_cast<UINT>(featureLevels.size()),
-                /* SDKVersion */ D3D11_SDK_VERSION,
-                /* ppDevice */ _r.device.put(),
-                /* pFeatureLevel */ nullptr,
-                /* ppImmediateContext */ deviceContext.put());
-            if (SUCCEEDED(hr))
-            {
-                break;
-            }
-        }
-        THROW_IF_FAILED(hr);
-
-        _r.deviceContext = deviceContext.query<ID3D11DeviceContext1>();
+        THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(_r.device.put())));
+        D3D12_COMMAND_QUEUE_DESC desc{};
+        THROW_IF_FAILED(_r.device->CreateCommandQueue(&desc, IID_PPV_ARGS(_r.commandQueue.put())));
+        THROW_IF_FAILED(_r.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(_r.commandAllocator.put())));
     }
 
 #ifndef NDEBUG
     // D3D debug messages
     if (deviceFlags & D3D11_CREATE_DEVICE_DEBUG)
     {
-        const auto infoQueue = _r.device.query<ID3D11InfoQueue>();
-        for (const auto severity : std::array{ D3D11_MESSAGE_SEVERITY_CORRUPTION, D3D11_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_SEVERITY_WARNING })
+        const auto infoQueue = _r.device.query<ID3D12InfoQueue>();
+        for (const auto severity : std::array{ D3D12_MESSAGE_SEVERITY_CORRUPTION, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_SEVERITY_WARNING })
         {
             infoQueue->SetBreakOnSeverity(severity, true);
         }
     }
 #endif // NDEBUG
 
-    // Our constant buffer will never get resized
     {
-        D3D11_BUFFER_DESC desc{};
-        desc.ByteWidth = sizeof(ConstBuffer);
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.constantBuffer.put()));
+        D3D12_ROOT_SIGNATURE_DESC desc{};
+        //desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        wil::com_ptr<ID3DBlob> signature;
+        wil::com_ptr<ID3DBlob> error;
+        THROW_IF_FAILED(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, signature.addressof(), error.addressof()));
+        THROW_IF_FAILED(_r.device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(_r.rootSignature.put())));
+    }
+    {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
+        desc.pRootSignature = _r.rootSignature.get();
+        desc.VS = { &shader_vs[0], sizeof(shader_vs) };
+        desc.PS = { &shader_ps[0], sizeof(shader_ps) };
+        //desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        THROW_IF_FAILED(_r.device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(_r.pipelineState.put())));
     }
 
-    THROW_IF_FAILED(_r.device->CreateVertexShader(&shader_vs[0], sizeof(shader_vs), nullptr, _r.vertexShader.put()));
-    THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_ps[0], sizeof(shader_ps), nullptr, _r.pixelShader.put()));
+    // Our constant buffer will never get resized
+    {
+        D3D12_HEAP_PROPERTIES props{};
+        props.Type = D3D12_HEAP_TYPE_UPLOAD; // TODO
+        D3D12_RESOURCE_DESC desc{};
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Alignment = alignof(ConstBuffer);
+        desc.Width = sizeof(ConstBuffer);
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        THROW_IF_FAILED(_r.device->CreateCommittedResource(
+            &props,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(_r.constantBuffer.put())));
+    }
 
     WI_ClearFlag(_api.invalidations, ApiInvalidations::Device);
     WI_SetAllFlags(_api.invalidations, ApiInvalidations::SwapChain);
@@ -752,13 +726,10 @@ void AtlasEngine::_releaseSwapChain()
     //   the application must force the destruction of all objects that the application freed.
     //   To force the destruction, call ID3D11DeviceContext::ClearState (or otherwise ensure
     //   no views are bound to pipeline state), and then call Flush on the immediate context.
-    if (_r.swapChain && _r.deviceContext)
+    if (_r.swapChain && _r.commandQueue)
     {
         _r.frameLatencyWaitableObject.reset();
         _r.swapChain.reset();
-        _r.renderTargetView.reset();
-        _r.deviceContext->ClearState();
-        _r.deviceContext->Flush();
     }
 }
 
@@ -789,17 +760,19 @@ void AtlasEngine::_createSwapChain()
         wil::com_ptr<IDXGIFactory2> dxgiFactory;
         THROW_IF_FAILED(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.addressof())));
 
+        wil::com_ptr<IDXGISwapChain1> swapChain;
+
         if (_api.hwnd)
         {
             desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 
-            if (FAILED(dxgiFactory->CreateSwapChainForHwnd(_r.device.get(), _api.hwnd, &desc, nullptr, nullptr, _r.swapChain.put())))
+            if (FAILED(dxgiFactory->CreateSwapChainForHwnd(_r.commandQueue.get(), _api.hwnd, &desc, nullptr, nullptr, swapChain.put())))
             {
                 // Platform Update for Windows 7:
                 // DXGI_SCALING_NONE is not supported on Windows 7 or Windows Server 2008 R2 with the Platform Update for
                 // Windows 7 installed and causes CreateSwapChainForHwnd to return DXGI_ERROR_INVALID_CALL when called.
                 desc.Scaling = DXGI_SCALING_STRETCH;
-                THROW_IF_FAILED(dxgiFactory->CreateSwapChainForHwnd(_r.device.get(), _api.hwnd, &desc, nullptr, nullptr, _r.swapChain.put()));
+                THROW_IF_FAILED(dxgiFactory->CreateSwapChainForHwnd(_r.commandQueue.get(), _api.hwnd, &desc, nullptr, nullptr, swapChain.put()));
             }
         }
         else
@@ -813,14 +786,15 @@ void AtlasEngine::_createSwapChain()
             // As per: https://docs.microsoft.com/en-us/windows/win32/api/dcomp/nf-dcomp-dcompositioncreatesurfacehandle
             static constexpr DWORD COMPOSITIONSURFACE_ALL_ACCESS = 0x0003L;
             THROW_IF_FAILED(DCompositionCreateSurfaceHandle(COMPOSITIONSURFACE_ALL_ACCESS, nullptr, _api.swapChainHandle.put()));
-            THROW_IF_FAILED(dxgiFactory.query<IDXGIFactoryMedia>()->CreateSwapChainForCompositionSurfaceHandle(_r.device.get(), _api.swapChainHandle.get(), &desc, nullptr, _r.swapChain.put()));
+            THROW_IF_FAILED(dxgiFactory.query<IDXGIFactoryMedia>()->CreateSwapChainForCompositionSurfaceHandle(_r.commandQueue.get(), _api.swapChainHandle.get(), &desc, nullptr, swapChain.put()));
         }
+
+        _r.swapChain = swapChain.query<IDXGISwapChain4>();
 
         if (supportsFrameLatencyWaitableObject)
         {
-            const auto swapChain2 = _r.swapChain.query<IDXGISwapChain2>();
-            THROW_IF_FAILED(swapChain2->SetMaximumFrameLatency(1)); // TODO: 2?
-            _r.frameLatencyWaitableObject.reset(swapChain2->GetFrameLatencyWaitableObject());
+            THROW_IF_FAILED(_r.swapChain->SetMaximumFrameLatency(1)); // TODO: 2?
+            _r.frameLatencyWaitableObject.reset(_r.swapChain->GetFrameLatencyWaitableObject());
             THROW_LAST_ERROR_IF(!_r.frameLatencyWaitableObject);
         }
     }
@@ -850,31 +824,29 @@ void AtlasEngine::_recreateSizeDependentResources()
     //   You can use ID3D11DeviceContext::ClearState to ensure that all [internal] references are released.
     if (_r.renderTargetView)
     {
-        _r.renderTargetView.reset();
-        _r.deviceContext->ClearState();
-        _r.deviceContext->Flush();
         THROW_IF_FAILED(_r.swapChain->ResizeBuffers(0, _api.sizeInPixel.x, _api.sizeInPixel.y, DXGI_FORMAT_UNKNOWN, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT));
     }
 
-    // The RenderTargetView is later used with OMSetRenderTargets
-    // to tell D3D where stuff is supposed to be rendered at.
     {
-        wil::com_ptr<ID3D11Texture2D> buffer;
-        THROW_IF_FAILED(_r.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), buffer.put_void()));
-        THROW_IF_FAILED(_r.device->CreateRenderTargetView(buffer.get(), nullptr, _r.renderTargetView.put()));
+        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
+        rtvHeapDesc.NumDescriptors = 2;
+        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        THROW_IF_FAILED(_r.device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(_r.renderTargetViewHeap.put())));
+    }
+    {
+        const auto increment = _r.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        auto handle = _r.renderTargetViewHeap->GetCPUDescriptorHandleForHeapStart();
+
+        for (UINT n = 0; n < 2; n++)
+        {
+            THROW_IF_FAILED(_r.swapChain->GetBuffer(n, IID_PPV_ARGS(_r.renderTargetView[n].put())));
+            _r.device->CreateRenderTargetView(_r.renderTargetView[n].get(), nullptr, handle);
+            handle.ptr += increment;
+        }
     }
 
-    // Tell D3D which parts of the render target will be visible.
-    // Everything outside of the viewport will be black.
-    //
-    // In the future this should cover the entire _api.sizeInPixel.x/_api.sizeInPixel.y.
-    // The pixel shader should draw the remaining content in the configured background color.
-    {
-        D3D11_VIEWPORT viewport{};
-        viewport.Width = static_cast<float>(_api.sizeInPixel.x);
-        viewport.Height = static_cast<float>(_api.sizeInPixel.y);
-        _r.deviceContext->RSSetViewports(1, &viewport);
-    }
+    _r.frameIndex = _r.swapChain->GetCurrentBackBufferIndex();
 
     if (_api.cellCount != _r.cellCount)
     {
@@ -910,15 +882,27 @@ void AtlasEngine::_recreateSizeDependentResources()
         _api.glyphAdvances = Buffer<f32>{ projectedGlyphSize };
         _api.glyphOffsets = Buffer<DWRITE_GLYPH_OFFSET>{ projectedGlyphSize };
 
-        D3D11_BUFFER_DESC desc;
-        desc.ByteWidth = gsl::narrow<u32>(totalCellCount * sizeof(Cell)); // totalCellCount can theoretically be UINT32_MAX!
-        desc.Usage = D3D11_USAGE_DYNAMIC;
-        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-        desc.StructureByteStride = sizeof(Cell);
-        THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.cellBuffer.put()));
-        THROW_IF_FAILED(_r.device->CreateShaderResourceView(_r.cellBuffer.get(), nullptr, _r.cellView.put()));
+        
+        D3D12_HEAP_PROPERTIES props{};
+        props.Type = D3D12_HEAP_TYPE_UPLOAD; // TODO
+        D3D12_RESOURCE_DESC desc{};
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Alignment = alignof(Cell);
+        desc.Width = totalCellCount * sizeof(Cell);
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        THROW_IF_FAILED(_r.device->CreateCommittedResource(
+            &props,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(_r.cellBuffer.put())));
     }
 
     // We have called _r.deviceContext->ClearState() in the beginning and lost all D3D state.
@@ -947,7 +931,7 @@ void AtlasEngine::_recreateFontDependentResources()
 
         static constexpr size_t sizePerPixel = 4;
         static constexpr size_t sizeLimit = D3D10_REQ_RESOURCE_SIZE_IN_MEGABYTES * 1024 * 1024;
-        const size_t dimensionLimit = _r.device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0 ? D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION : D3D10_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+        const size_t dimensionLimit = D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION;
         const size_t csx = _api.fontMetrics.cellSize.x;
         const size_t csy = _api.fontMetrics.cellSize.y;
         const auto xLimit = (dimensionLimit / csx) * csx;
