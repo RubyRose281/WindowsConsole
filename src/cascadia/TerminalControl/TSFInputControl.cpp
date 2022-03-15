@@ -81,7 +81,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     // - <none>
     void TSFInputControl::NotifyFocusEnter()
     {
-        if (_editContext != nullptr)
+        if (_editContext)
         {
             _editContext.NotifyFocusEnter();
             _focused = true;
@@ -97,7 +97,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     // - <none>
     void TSFInputControl::NotifyFocusLeave()
     {
-        if (_editContext != nullptr)
+        if (_editContext)
         {
             _editContext.NotifyFocusLeave();
             _focused = false;
@@ -113,17 +113,13 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     // - <none>
     void TSFInputControl::ClearBuffer()
     {
-        if (!_inputBuffer.empty())
-        {
-            TextBlock().Text(L"");
-            const auto bufLen = ::base::ClampedNumeric<int32_t>(_inputBuffer.length());
-            _inputBuffer.clear();
-            _editContext.NotifyFocusLeave();
-            _editContext.NotifyTextChanged({ 0, bufLen }, 0, { 0, 0 });
-            _editContext.NotifyFocusEnter();
-            _activeTextStart = 0;
-            _inComposition = false;
-        }
+        TextBlock().Text(L"");
+        _inputBuffer.clear();
+        _editContext.NotifyFocusLeave();
+        _editContext.NotifyTextChanged({ 0, INT32_MAX }, 0, { 0, 0 });
+        _editContext.NotifyFocusEnter();
+        _activeTextStart = 0;
+        _inComposition = false;
     }
 
     // Method Description:
@@ -301,12 +297,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     void TSFInputControl::_compositionCompletedHandler(CoreTextEditContext sender, CoreTextCompositionCompletedEventArgs const& /*args*/)
     {
         _inComposition = false;
-
-        // only need to do work if the current buffer has text
-        if (!_inputBuffer.empty())
-        {
-            _SendAndClearText();
-        }
+        _SendAndClearText();
     }
 
     // Method Description:
@@ -336,16 +327,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         // the range the TSF wants to know about
         const auto range = args.Request().Range();
-
-        try
-        {
-            const auto textEnd = ::base::ClampMin<size_t>(range.EndCaretPosition, _inputBuffer.length());
-            const auto length = ::base::ClampSub<size_t>(textEnd, range.StartCaretPosition);
-            const auto textRequested = _inputBuffer.substr(range.StartCaretPosition, length);
-
-            args.Request().Text(textRequested);
-        }
-        CATCH_LOG();
+        const auto beg = std::clamp<size_t>(range.StartCaretPosition, _activeTextStart, _inputBuffer.length());
+        const auto end = std::clamp<size_t>(range.EndCaretPosition, beg, _inputBuffer.length());
+        args.Request().Text(std::wstring_view{ &til::at(_inputBuffer, beg), end - beg });
     }
 
     // Method Description:
@@ -391,6 +375,13 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         try
         {
+            assert(range.StartCaretPosition <= range.EndCaretPosition);
+            assert(range.StartCaretPosition <= _inputBuffer.length());
+            assert(range.EndCaretPosition <= _inputBuffer.length());
+
+            const auto beg = std::clamp<size_t>(range.StartCaretPosition, 0, _inputBuffer.length());
+            const auto end = std::clamp<size_t>(range.EndCaretPosition, beg, _inputBuffer.length());
+
             // When a user deletes the last character in their current composition, some machines
             // will fire a CompositionCompleted before firing a TextUpdating event that deletes the last character.
             // The TextUpdating will have a lower StartCaretPosition, so in this scenario, _activeTextStart
@@ -398,12 +389,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             // A known issue related to this behavior is that the last character that's deleted from a composition
             // will get sent to the terminal before we receive the TextUpdate to delete the character.
             // See GH #5054.
-            _activeTextStart = ::base::ClampMin(_activeTextStart, ::base::ClampedNumeric<size_t>(range.StartCaretPosition));
+            _activeTextStart = std::min(_activeTextStart, beg);
 
-            _inputBuffer = _inputBuffer.replace(
-                range.StartCaretPosition,
-                ::base::ClampSub<size_t>(range.EndCaretPosition, range.StartCaretPosition),
-                incomingText);
+            _inputBuffer.replace(beg, end - beg, incomingText);
 
             // Emojis/Kaomojis/Symbols chosen through the IME without starting composition
             // will be sent straight through to the terminal.
@@ -414,7 +402,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             else
             {
                 Canvas().Visibility(Visibility::Visible);
-                const auto text = _inputBuffer.substr(_activeTextStart);
+                const auto text = std::wstring_view{ _inputBuffer }.substr(_activeTextStart);
                 TextBlock().Text(text);
             }
 
@@ -439,7 +427,11 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     // - <none>
     void TSFInputControl::_SendAndClearText()
     {
-        const auto text = _inputBuffer.substr(_activeTextStart);
+        const auto text = std::wstring_view{ _inputBuffer }.substr(_activeTextStart);
+        if (text.empty())
+        {
+            return;
+        }
 
         _CompositionCompletedHandlers(text);
 
@@ -456,6 +448,12 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         // hide the controls until text input starts again
         Canvas().Visibility(Visibility::Collapsed);
+
+        Dispatcher().RunAsync(CoreDispatcherPriority::High, [this]() {
+            _editContext.NotifyTextChanged({ 0, int32_t(_activeTextStart) }, 0, { 0, 0 });
+            _inputBuffer.replace(0, _activeTextStart, std::wstring_view{});
+            _activeTextStart = _inputBuffer.length();
+        });
     }
 
     // Method Description:

@@ -58,6 +58,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         void _textUpdatingHandler(winrt::Windows::UI::Text::Core::CoreTextEditContext sender, winrt::Windows::UI::Text::Core::CoreTextTextUpdatingEventArgs const& args);
         void _formatUpdatingHandler(winrt::Windows::UI::Text::Core::CoreTextEditContext sender, winrt::Windows::UI::Text::Core::CoreTextFormatUpdatingEventArgs const& args);
 
+        void _SendAndClearText();
+        void _RedrawCanvas();
+
         winrt::Windows::UI::Text::Core::CoreTextEditContext::TextRequested_revoker _textRequestedRevoker;
         winrt::Windows::UI::Text::Core::CoreTextEditContext::SelectionRequested_revoker _selectionRequestedRevoker;
         winrt::Windows::UI::Text::Core::CoreTextEditContext::FocusRemoved_revoker _focusRemovedRevoker;
@@ -74,8 +77,6 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         bool _inComposition;
         size_t _activeTextStart;
-        void _SendAndClearText();
-        void _RedrawCanvas();
         bool _focused;
 
         til::point _currentTerminalCursorPos;
