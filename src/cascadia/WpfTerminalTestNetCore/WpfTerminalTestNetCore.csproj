@@ -2,15 +2,14 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
-    <RuntimeFrameworkVersion>3.1.18</RuntimeFrameworkVersion>
+    <TargetFramework>net6.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <Platforms>AnyCPU;x64;x86</Platforms>
+    <Platforms>AnyCPU;x64;x86;ARM64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="$(SolutionDir)src\api-ms-win-core-synch-l1-2-0\api-ms-win-core-synch-l1-2-0.vcxproj" />
-    <ProjectReference Include="$(SolutionDir)src\cascadia\PublicTerminalCore\PublicTerminalCore.vcxproj" />
+	  <!--<ProjectReference Include="$(SolutionDir)src\api-ms-win-core-synch-l1-2-0\api-ms-win-core-synch-l1-2-0.vcxproj" />-->
+	  <!--<ProjectReference Include="$(SolutionDir)src\cascadia\PublicTerminalCore\PublicTerminalCore.vcxproj" />-->
     <ProjectReference Include="$(SolutionDir)src\cascadia\WpfTerminalControl\WpfTerminalControl.csproj" />
   </ItemGroup>
 
@@ -18,6 +17,7 @@
     <UnreasonablePlatform>$(Platform)</UnreasonablePlatform>
     <UnreasonablePlatform Condition="'$(UnreasonablePlatform)' == 'x86'">Win32</UnreasonablePlatform>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>WpfTerminalTestNetCore.App</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="$(SolutionDir)bin\$(UnreasonablePlatform)\$(Configuration)\PublicTerminalCore.dll">
