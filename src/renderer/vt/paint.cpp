@@ -66,14 +66,14 @@ using namespace Microsoft::Console::Types;
     // If we've circled the buffer this frame, move our virtual top upwards.
     // We do this at the END of the frame, so that during the paint, we still
     //      use the original virtual top.
-    if (_circled)
+    const auto wasCircled = std::exchange(_circled, false);
+    if (wasCircled)
     {
         if (_virtualTop > 0)
         {
             _virtualTop--;
         }
     }
-    _circled = false;
 
     // If we deferred a cursor movement during the frame, make sure we put the
     //      cursor in the right place before we end the frame.
@@ -82,8 +82,10 @@ using namespace Microsoft::Console::Types;
         RETURN_IF_FAILED(_MoveCursor(_deferredCursorPos));
     }
 
-    RETURN_IF_FAILED(_Flush());
-
+    if (!wasCircled)
+    {
+        RETURN_IF_FAILED(Flush());
+    }
     return S_OK;
 }
 

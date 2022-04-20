@@ -64,6 +64,13 @@ VtEngine::VtEngine(_In_ wil::unique_hfile pipe,
     // member is only defined when UNIT_TESTING is.
     _usingTestCallback = false;
 #endif
+
+    _overlapped.hEvent = CreateEventW(nullptr, TRUE, TRUE, nullptr);
+}
+
+VtEngine::~VtEngine()
+{
+    CloseHandle(_overlapped.hEvent);
 }
 
 // Method Description:
@@ -169,7 +176,7 @@ static const auto foobar = []() {
     return true;
 }();
 
-[[nodiscard]] HRESULT VtEngine::_Flush() noexcept
+[[nodiscard]] HRESULT VtEngine::Flush() noexcept
 {
 #ifdef UNIT_TESTING
     if (_hFile.get() == INVALID_HANDLE_VALUE)
@@ -179,7 +186,7 @@ static const auto foobar = []() {
     }
 #endif
 
-    if (!_pipeBroken)
+    if (!_buffer.empty() && !_pipeBroken)
     {
         {
             std::unique_lock guard{ statLock };
@@ -189,8 +196,12 @@ static const auto foobar = []() {
             statCount++;
         }
 
-        bool fSuccess = !!WriteFile(_hFile.get(), _buffer.data(), gsl::narrow_cast<DWORD>(_buffer.size()), nullptr, nullptr);
+        WaitForSingleObject(_overlapped.hEvent, 0);
+
+        std::swap(_buffer, _backBuffer);
         _buffer.clear();
+
+        bool fSuccess = !!WriteFile(_hFile.get(), _backBuffer.data(), gsl::narrow_cast<DWORD>(_backBuffer.size()), nullptr, &_overlapped);
         if (!fSuccess)
         {
             _exitResult = HRESULT_FROM_WIN32(GetLastError());
@@ -449,7 +460,7 @@ void VtEngine::SetTerminalOwner(Microsoft::Console::VirtualTerminal::VtIo* const
 HRESULT VtEngine::RequestCursor() noexcept
 {
     RETURN_IF_FAILED(_RequestCursor());
-    RETURN_IF_FAILED(_Flush());
+    RETURN_IF_FAILED(Flush());
     return S_OK;
 }
 
@@ -566,13 +577,13 @@ void VtEngine::SetTerminalCursorTextPosition(const COORD cursor) noexcept
 HRESULT VtEngine::RequestWin32Input() noexcept
 {
     RETURN_IF_FAILED(_RequestWin32Input());
-    RETURN_IF_FAILED(_Flush());
+    RETURN_IF_FAILED(Flush());
     return S_OK;
 }
 
 HRESULT VtEngine::SwitchScreenBuffer(const bool useAltBuffer) noexcept
 {
     RETURN_IF_FAILED(_SwitchScreenBuffer(useAltBuffer));
-    RETURN_IF_FAILED(_Flush());
+    RETURN_IF_FAILED(Flush());
     return S_OK;
 }

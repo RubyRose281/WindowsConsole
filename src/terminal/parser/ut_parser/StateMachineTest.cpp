@@ -113,6 +113,11 @@ public:
         return [=](const auto ch) { dcsDataString += ch; return true; };
     }
 
+    bool Flush() override
+    {
+        return true;
+    }
+
     // These will only be populated if ActionCsiDispatch is called.
     uint64_t csiId = 0;
     std::vector<size_t> csiParams;

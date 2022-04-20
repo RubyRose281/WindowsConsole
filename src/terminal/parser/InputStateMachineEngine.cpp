@@ -500,6 +500,11 @@ bool InputStateMachineEngine::ActionSs3Dispatch(const wchar_t wch, const VTParam
     return success;
 }
 
+bool InputStateMachineEngine::Flush()
+{
+    return true;
+}
+
 // Method Description:
 // - Triggers the Clear action to indicate that the state machine should erase
 //      all internal state.

@@ -212,7 +212,7 @@ void VtApiRoutines::_SynchronizeCursor(std::unique_ptr<IWaitRoutine>& waiter) no
         (void)m_pVtEngine->WriteTerminalW(ConvertToW(m_outputCodepage, buffer));
     }
 
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     read = buffer.size();
     return S_OK;
 }
@@ -224,7 +224,7 @@ void VtApiRoutines::_SynchronizeCursor(std::unique_ptr<IWaitRoutine>& waiter) no
                                                        std::unique_ptr<IWaitRoutine>& waiter) noexcept
 {
     (void)m_pVtEngine->WriteTerminalW(buffer);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     read = buffer.size();
     return S_OK;
 }
@@ -244,7 +244,7 @@ void VtApiRoutines::_SynchronizeCursor(std::unique_ptr<IWaitRoutine>& waiter) no
     (void)m_pVtEngine->_SetGraphicsRendition16Color(static_cast<BYTE>(attribute), true);
     (void)m_pVtEngine->_SetGraphicsRendition16Color(static_cast<BYTE>(attribute >> 4), false);
     (void)m_pVtEngine->_WriteFill(lengthToWrite, s_readBackAscii.Char.AsciiChar);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     cellsModified = lengthToWrite;
     return S_OK;
 }
@@ -261,7 +261,7 @@ void VtApiRoutines::_SynchronizeCursor(std::unique_ptr<IWaitRoutine>& waiter) no
     {
         (void)m_pVtEngine->_CursorPosition(startingCoordinate);
         (void)m_pVtEngine->_WriteFill(lengthToWrite, character);
-        (void)m_pVtEngine->_Flush();
+        (void)m_pVtEngine->Flush();
         cellsModified = lengthToWrite;
         return S_OK;
     }
@@ -289,7 +289,7 @@ void VtApiRoutines::_SynchronizeCursor(std::unique_ptr<IWaitRoutine>& waiter) no
         (void)m_pVtEngine->WriteTerminalW(sv);
     }
 
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     cellsModified = lengthToWrite;
     return S_OK;
 }
@@ -334,7 +334,7 @@ void VtApiRoutines::GetConsoleCursorInfoImpl(const SCREEN_INFORMATION& context,
                                                               const bool isVisible) noexcept
 {
     isVisible ? (void)m_pVtEngine->_ShowCursor() : (void)m_pVtEngine->_HideCursor();
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 
@@ -356,7 +356,7 @@ void VtApiRoutines::GetConsoleScreenBufferInfoExImpl(const SCREEN_INFORMATION& c
     //color table?
     // popup attributes... hold internally?
     // TODO GH10001: popups are gonna erase the stuff behind them... deal with that somehow.
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 
@@ -378,7 +378,7 @@ void VtApiRoutines::GetConsoleScreenBufferInfoExImpl(const SCREEN_INFORMATION& c
     else
     {
         (void)m_pVtEngine->_CursorPosition(position);
-        (void)m_pVtEngine->_Flush();
+        (void)m_pVtEngine->Flush();
     }
     return S_OK;
 }
@@ -418,7 +418,7 @@ void VtApiRoutines::GetLargestConsoleWindowSizeImpl(const SCREEN_INFORMATION& co
 {
     (void)m_pVtEngine->_SetGraphicsRendition16Color(static_cast<BYTE>(attribute), true);
     (void)m_pVtEngine->_SetGraphicsRendition16Color(static_cast<BYTE>(attribute >> 4), false);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 
@@ -427,7 +427,7 @@ void VtApiRoutines::GetLargestConsoleWindowSizeImpl(const SCREEN_INFORMATION& co
                                                               const SMALL_RECT& windowRect) noexcept
 {
     (void)m_pVtEngine->_ResizeWindow(windowRect.Right - windowRect.Left, windowRect.Bottom - windowRect.Top);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 
@@ -520,7 +520,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
         pos += width;
     }
 
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
 
     //TODO GH10001: trim to buffer size?
     writtenRectangle = requestRectangle;
@@ -541,7 +541,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
         (void)m_pVtEngine->WriteTerminalUtf8(std::string_view{ &s_readBackAscii.Char.AsciiChar, 1 });
     }
 
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
 
     used = attrs.size();
     return S_OK;
@@ -556,7 +556,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
     {
         (void)m_pVtEngine->_CursorPosition(target);
         (void)m_pVtEngine->WriteTerminalUtf8(text);
-        (void)m_pVtEngine->_Flush();
+        (void)m_pVtEngine->Flush();
         return S_OK;
     }
     else
@@ -572,7 +572,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
 {
     (void)m_pVtEngine->_CursorPosition(target);
     (void)m_pVtEngine->WriteTerminalW(text);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 
@@ -664,7 +664,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
 [[nodiscard]] HRESULT VtApiRoutines::SetConsoleTitleWImpl(const std::wstring_view title) noexcept
 {
     (void)m_pVtEngine->UpdateTitle(title);
-    (void)m_pVtEngine->_Flush();
+    (void)m_pVtEngine->Flush();
     return S_OK;
 }
 

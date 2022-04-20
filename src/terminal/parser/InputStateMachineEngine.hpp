@@ -162,6 +162,8 @@ namespace Microsoft::Console::VirtualTerminal
 
         bool ActionSs3Dispatch(const wchar_t wch, const VTParameters parameters) override;
 
+        bool Flush() override;
+
         void SetFlushToInputQueueCallback(std::function<bool()> pfnFlushToInputQueue);
 
     private:

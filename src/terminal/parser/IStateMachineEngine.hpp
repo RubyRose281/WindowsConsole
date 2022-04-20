@@ -49,6 +49,8 @@ namespace Microsoft::Console::VirtualTerminal
                                        const std::wstring_view string) = 0;
 
         virtual bool ActionSs3Dispatch(const wchar_t wch, const VTParameters parameters) = 0;
+        
+        virtual bool Flush() = 0;
 
     protected:
         IStateMachineEngine() = default;

@@ -47,6 +47,8 @@ namespace Microsoft::Console::Render
         VtEngine(_In_ wil::unique_hfile hPipe,
                  const Microsoft::Console::Types::Viewport initialViewport);
 
+        ~VtEngine();
+
         // IRenderEngine
         [[nodiscard]] HRESULT StartPaint() noexcept override;
         [[nodiscard]] HRESULT EndPaint() noexcept override;
@@ -87,10 +89,13 @@ namespace Microsoft::Console::Render
         [[nodiscard]] virtual HRESULT ManuallyClearScrollback() noexcept;
         [[nodiscard]] HRESULT RequestWin32Input() noexcept;
         [[nodiscard]] HRESULT SwitchScreenBuffer(const bool useAltBuffer) noexcept;
+        [[nodiscard]] virtual HRESULT Flush() noexcept;
 
     protected:
         wil::unique_hfile _hFile;
         std::string _buffer;
+        std::string _backBuffer;
+        OVERLAPPED _overlapped{};
 
         std::string _formatBuffer;
         std::string _conversionBuffer;
@@ -138,7 +143,6 @@ namespace Microsoft::Console::Render
 
         [[nodiscard]] HRESULT _WriteFill(const size_t n, const char c) noexcept;
         [[nodiscard]] HRESULT _Write(std::string_view const str) noexcept;
-        [[nodiscard]] HRESULT _Flush() noexcept;
 
         template<typename S, typename... Args>
         [[nodiscard]] HRESULT _WriteFormatted(S&& format, Args&&... args)

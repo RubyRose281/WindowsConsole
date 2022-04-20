@@ -863,6 +863,11 @@ bool OutputStateMachineEngine::ActionSs3Dispatch(const wchar_t /*wch*/, const VT
     return false;
 }
 
+bool OutputStateMachineEngine::Flush()
+{
+    return _pTtyConnection ? SUCCEEDED_LOG(_pTtyConnection->Flush()) : false;
+}
+
 // Routine Description:
 // - Null terminates, then returns, the string that we've collected as part of the OSC string.
 // Arguments:
