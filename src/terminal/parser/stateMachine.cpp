@@ -1897,12 +1897,8 @@ void StateMachine::ProcessString(const std::wstring_view string)
     }
 
     const auto run = _CurrentRun();
-    if (!_processingIndividually && run.empty())
-    {
-        FlushToTerminal();
-    }
     // If we're at the end of the string and have remaining un-printed characters,
-    else if (!_processingIndividually && !run.empty())
+    if (!_processingIndividually && !run.empty())
     {
         // print the rest of the characters in the string
         _ActionPrintString(run);

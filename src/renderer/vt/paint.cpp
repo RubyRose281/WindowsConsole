@@ -99,7 +99,12 @@ using namespace Microsoft::Console::Types;
 // - S_FALSE since we do nothing.
 [[nodiscard]] HRESULT VtEngine::Present() noexcept
 {
-    return S_FALSE;
+    if (_buffer.size() >= 16 * 1024)
+    {
+        RETURN_IF_FAILED(Flush());
+    }
+
+    return S_OK;
 }
 
 // Routine Description:

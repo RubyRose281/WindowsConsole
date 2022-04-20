@@ -20,6 +20,33 @@ using namespace std::string_view_literals;
 // Format is: "DecimalResult (HexadecimalForm)"
 static constexpr auto _errorFormat = L"{0} ({0:#010x})"sv;
 
+static BOOL CreatePipeWithOverlappedIO(_Out_ PHANDLE hReadPipe, _Out_ PHANDLE hWritePipe, _In_opt_ LPSECURITY_ATTRIBUTES lpPipeAttributes, _In_ DWORD nSize)
+{
+    static std::atomic<DWORD> id;
+
+    wchar_t name[MAX_PATH];
+    swprintf(name, std::size(name), L"\\\\.\\Pipe\\OpenConsole.%08x.%08x", GetCurrentProcessId(), id.fetch_add(1, std::memory_order_relaxed));
+
+    const auto writer = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE | PIPE_WAIT, 1, nSize, nSize, 120 * 1000, lpPipeAttributes);
+    if (writer == INVALID_HANDLE_VALUE)
+    {
+        return FALSE;
+    }
+
+    const auto reader = CreateFileW(name, GENERIC_WRITE, 0, lpPipeAttributes, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
+    if (reader == INVALID_HANDLE_VALUE)
+    {
+        const auto err = GetLastError();
+        CloseHandle(writer);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    *hReadPipe = writer;
+    *hWritePipe = reader;
+    return TRUE;
+}
+
 // Notes:
 // There is a number of ways that the Conpty connection can be terminated (voluntarily or not):
 // 1. The connection is Close()d
@@ -53,7 +80,7 @@ namespace winrt::Microsoft::Terminal::TerminalConnection::implementation
         wil::unique_hfile inPipeOurSide, inPipePseudoConsoleSide;
 
         RETURN_IF_WIN32_BOOL_FALSE(CreatePipe(&inPipePseudoConsoleSide, &inPipeOurSide, nullptr, 0));
-        RETURN_IF_WIN32_BOOL_FALSE(CreatePipe(&outPipeOurSide, &outPipePseudoConsoleSide, nullptr, 0));
+        RETURN_IF_WIN32_BOOL_FALSE(CreatePipeWithOverlappedIO(&outPipeOurSide, &outPipePseudoConsoleSide, nullptr, 32 * 1024));
         RETURN_IF_FAILED(ConptyCreatePseudoConsole(size, inPipePseudoConsoleSide.get(), outPipePseudoConsoleSide.get(), dwFlags, phPC));
         *phInput = inPipeOurSide.release();
         *phOutput = outPipeOurSide.release();

@@ -196,7 +196,7 @@ static const auto foobar = []() {
             statCount++;
         }
 
-        WaitForSingleObject(_overlapped.hEvent, 0);
+        FAIL_FAST_IF(WAIT_OBJECT_0 != WaitForSingleObject(_overlapped.hEvent, INFINITE));
 
         std::swap(_buffer, _backBuffer);
         _buffer.clear();
@@ -204,13 +204,17 @@ static const auto foobar = []() {
         bool fSuccess = !!WriteFile(_hFile.get(), _backBuffer.data(), gsl::narrow_cast<DWORD>(_backBuffer.size()), nullptr, &_overlapped);
         if (!fSuccess)
         {
-            _exitResult = HRESULT_FROM_WIN32(GetLastError());
-            _pipeBroken = true;
-            if (_terminalOwner)
+            const auto lastError = GetLastError();
+            if (lastError != ERROR_IO_PENDING)
             {
-                _terminalOwner->CloseOutput();
+                _exitResult = HRESULT_FROM_WIN32(lastError);
+                _pipeBroken = true;
+                if (_terminalOwner)
+                {
+                    _terminalOwner->CloseOutput();
+                }
+                return _exitResult;
             }
-            return _exitResult;
         }
     }
 
