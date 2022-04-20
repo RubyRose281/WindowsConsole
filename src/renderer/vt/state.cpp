@@ -135,6 +135,40 @@ CATCH_RETURN();
     CATCH_RETURN();
 }
 
+static std::shared_mutex statLock;
+static constexpr size_t sizeMax = static_cast<size_t>(-1);
+static size_t statMin = sizeMax, statMax, statSum, statCount;
+
+static const auto foobar = []() {
+    std::thread t([]() {
+        wchar_t buffer[1024];
+
+        for (;;)
+        {
+            Sleep(1000);
+
+            {
+                std::unique_lock guard{ statLock };
+
+                if (!statCount)
+                {
+                    continue;
+                }
+
+                swprintf(&buffer[0], std::size(buffer), L"\nFlush:\n  min: %llu\n  max: %llu\n  avg: %.3f\n\n", statMin, statMax, static_cast<double>(statSum) / static_cast<double>(statCount));
+                statMin = sizeMax;
+                statMax = 0;
+                statSum = 0;
+                statCount = 0;
+            }
+
+            OutputDebugStringW(&buffer[0]);
+        }
+    });
+    t.detach();
+    return true;
+}();
+
 [[nodiscard]] HRESULT VtEngine::_Flush() noexcept
 {
 #ifdef UNIT_TESTING
@@ -147,6 +181,14 @@ CATCH_RETURN();
 
     if (!_pipeBroken)
     {
+        {
+            std::unique_lock guard{ statLock };
+            statMin = std::min(statMin, _buffer.size());
+            statMax = std::max(statMax, _buffer.size());
+            statSum += _buffer.size();
+            statCount++;
+        }
+
         bool fSuccess = !!WriteFile(_hFile.get(), _buffer.data(), gsl::narrow_cast<DWORD>(_buffer.size()), nullptr, nullptr);
         _buffer.clear();
         if (!fSuccess)
