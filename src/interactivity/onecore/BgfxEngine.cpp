@@ -33,12 +33,12 @@ BgfxEngine::BgfxEngine(PVOID SharedViewBase, LONG DisplayHeight, LONG DisplayWid
     _fontSize.Y = FontHeight > SHORT_MAX ? SHORT_MAX : (SHORT)FontHeight;
 }
 
-[[nodiscard]] HRESULT BgfxEngine::Invalidate(const SMALL_RECT* const /*psrRegion*/) noexcept
+[[nodiscard]] HRESULT BgfxEngine::Invalidate(const til::rect* const /*psrRegion*/) noexcept
 {
     return S_OK;
 }
 
-[[nodiscard]] HRESULT BgfxEngine::InvalidateCursor(const SMALL_RECT* const /*psrRegion*/) noexcept
+[[nodiscard]] HRESULT BgfxEngine::InvalidateCursor(const til::rect* const /*psrRegion*/) noexcept
 {
     return S_OK;
 }
@@ -48,7 +48,7 @@ BgfxEngine::BgfxEngine(PVOID SharedViewBase, LONG DisplayHeight, LONG DisplayWid
     return S_OK;
 }
 
-[[nodiscard]] HRESULT BgfxEngine::InvalidateSelection(const std::vector<SMALL_RECT>& /*rectangles*/) noexcept
+[[nodiscard]] HRESULT BgfxEngine::InvalidateSelection(const std::vector<til::rect>& /*rectangles*/) noexcept
 {
     return S_OK;
 }
@@ -168,7 +168,7 @@ BgfxEngine::BgfxEngine(PVOID SharedViewBase, LONG DisplayHeight, LONG DisplayWid
     return S_OK;
 }
 
-[[nodiscard]] HRESULT BgfxEngine::PaintSelection(const SMALL_RECT /*rect*/) noexcept
+[[nodiscard]] HRESULT BgfxEngine::PaintSelection(const til::rect& /*rect*/) noexcept
 {
     return S_OK;
 }

@@ -44,10 +44,10 @@ namespace
         HRESULT Present() noexcept { return S_OK; }
         HRESULT PrepareForTeardown(_Out_ bool* /*pForcePaint*/) noexcept { return S_OK; }
         HRESULT ScrollFrame() noexcept { return S_OK; }
-        HRESULT Invalidate(const SMALL_RECT* /*psrRegion*/) noexcept { return S_OK; }
-        HRESULT InvalidateCursor(const SMALL_RECT* /*psrRegion*/) noexcept { return S_OK; }
+        HRESULT Invalidate(const til::rect* /*psrRegion*/) noexcept { return S_OK; }
+        HRESULT InvalidateCursor(const til::rect* /*psrRegion*/) noexcept { return S_OK; }
         HRESULT InvalidateSystem(const RECT* /*prcDirtyClient*/) noexcept { return S_OK; }
-        HRESULT InvalidateSelection(const std::vector<SMALL_RECT>& /*rectangles*/) noexcept { return S_OK; }
+        HRESULT InvalidateSelection(const std::vector<til::rect>& /*rectangles*/) noexcept { return S_OK; }
         HRESULT InvalidateScroll(const COORD* pcoordDelta) noexcept
         {
             _triggerScrollDelta = { *pcoordDelta };
@@ -58,7 +58,7 @@ namespace
         HRESULT PaintBackground() noexcept { return S_OK; }
         HRESULT PaintBufferLine(gsl::span<const Cluster> /*clusters*/, COORD /*coord*/, bool /*fTrimLeft*/, bool /*lineWrapped*/) noexcept { return S_OK; }
         HRESULT PaintBufferGridLines(GridLineSet /*lines*/, COLORREF /*color*/, size_t /*cchLine*/, COORD /*coordTarget*/) noexcept { return S_OK; }
-        HRESULT PaintSelection(SMALL_RECT /*rect*/) noexcept { return S_OK; }
+        HRESULT PaintSelection(const til::rect& /*rect*/) noexcept { return S_OK; }
         HRESULT PaintCursor(const CursorOptions& /*options*/) noexcept { return S_OK; }
         HRESULT UpdateDrawingBrushes(const TextAttribute& /*textAttributes*/, const RenderSettings& /*renderSettings*/, gsl::not_null<IRenderData*> /*pData*/, bool /*usingSoftFont*/, bool /*isSettingDefaultBrushes*/) noexcept { return S_OK; }
         HRESULT UpdateFont(const FontInfoDesired& /*FontInfoDesired*/, _Out_ FontInfo& /*FontInfo*/) noexcept { return S_OK; }
@@ -223,9 +223,9 @@ void ScrollTest::TestNotifyScrolling()
                                                     TerminalHistoryLength);
             const int expectedHeight = TerminalViewHeight;
             const int expectedBottom = expectedTop + TerminalViewHeight;
-            if ((tmp.ViewportTop != expectedTop) ||
-                (tmp.ViewportHeight != expectedHeight) ||
-                (tmp.BufferHeight != expectedBottom))
+            if (tmp.ViewportTop != expectedTop ||
+                tmp.ViewportHeight != expectedHeight ||
+                tmp.BufferHeight != expectedBottom)
             {
                 Log::Comment(NoThrowString().Format(L"Expected viewport values did not match on line %d", currentRow));
             }

@@ -83,11 +83,11 @@ void Scrolling::s_ScrollIfNecessary(const SCREEN_INFORMATION& ScreenInfo)
         {
             pWindow->ConvertScreenToClient(&CursorPos);
 
-            COORD MousePosition;
+            til::point MousePosition;
             MousePosition.X = (SHORT)CursorPos.x;
             MousePosition.Y = (SHORT)CursorPos.y;
 
-            COORD coordFontSize = ScreenInfo.GetScreenFontSize();
+            const auto coordFontSize = ScreenInfo.GetScreenFontSize();
 
             MousePosition.X /= coordFontSize.X;
             MousePosition.Y /= coordFontSize.Y;
@@ -178,7 +178,7 @@ void Scrolling::s_HandleMouseWheel(_In_ bool isMouseWheel,
 
             if (hasShift)
             {
-                delta = std::max(ScreenInfo.GetViewport().RightInclusive(), 1i16);
+                delta = gsl::narrow<short>(std::max(ScreenInfo.GetViewport().RightInclusive(), 1));
             }
 
             delta *= (ScreenInfo.HWheelDelta / (short)ulActualDelta);

@@ -13,7 +13,7 @@ using PointTree = interval_tree::IntervalTree<til::point, size_t>;
 
 static constexpr auto maxRetriesForRenderEngine = 3;
 // The renderer will wait this number of milliseconds * how many tries have elapsed before trying again.
-static constexpr auto renderBackoffBaseTimeMilliseconds{ 150 };
+static constexpr auto renderBackoffBaseTimeMilliseconds = 150;
 
 #define FOREACH_ENGINE(var)   \
     for (auto var : _engines) \
@@ -216,8 +216,8 @@ void Renderer::TriggerSystemRedraw(const RECT* const prcDirtyClient)
 // - <none>
 void Renderer::TriggerRedraw(const Viewport& region)
 {
-    Viewport view = _viewport;
-    SMALL_RECT srUpdateRegion = region.ToExclusive();
+    auto view = _viewport;
+    auto srUpdateRegion = region.ToExclusive();
 
     // If the dirty region has double width lines, we need to double the size of
     // the right margin to make sure all the affected cells are invalidated.
@@ -273,19 +273,19 @@ void Renderer::TriggerRedrawCursor(const COORD* const pcoord)
         // We then calculate the region covered by the cursor. This requires
         // converting the buffer coordinates to an equivalent range of screen
         // cells for the cursor, taking line rendition into account.
-        const LineRendition lineRendition = buffer.GetLineRendition(pcoord->Y);
-        const SHORT cursorWidth = _pData->IsCursorDoubleWidth() ? 2 : 1;
-        const SMALL_RECT cursorRect = { pcoord->X, pcoord->Y, pcoord->X + cursorWidth - 1, pcoord->Y };
-        Viewport cursorView = Viewport::FromInclusive(BufferToScreenLine(cursorRect, lineRendition));
+        const auto lineRendition = buffer.GetLineRendition(pcoord->Y);
+        const auto cursorWidth = _pData->IsCursorDoubleWidth() ? 2 : 1;
+        const til::inclusive_rect cursorRect{ pcoord->X, pcoord->Y, pcoord->X + cursorWidth - 1, pcoord->Y };
+        auto cursorView = Viewport::FromInclusive(BufferToScreenLine(cursorRect, lineRendition));
 
         // The region is clamped within the viewport boundaries and we only
         // trigger a redraw if the region is not empty.
-        Viewport view = _pData->GetViewport();
+        auto view = _pData->GetViewport();
         cursorView = view.Clamp(cursorView);
 
         if (cursorView.IsValid())
         {
-            const SMALL_RECT updateRect = view.ConvertToOrigin(cursorView).ToExclusive();
+            const auto updateRect = view.ConvertToOrigin(cursorView).ToExclusive();
             FOREACH_ENGINE(pEngine)
             {
                 LOG_IF_FAILED(pEngine->InvalidateCursor(&updateRect));
@@ -328,8 +328,8 @@ void Renderer::TriggerTeardown() noexcept
     // Then walk through and do one final paint on the caller's thread.
     FOREACH_ENGINE(pEngine)
     {
-        bool fEngineRequestsRepaint = false;
-        HRESULT hr = pEngine->PrepareForTeardown(&fEngineRequestsRepaint);
+        auto fEngineRequestsRepaint = false;
+        auto hr = pEngine->PrepareForTeardown(&fEngineRequestsRepaint);
         LOG_IF_FAILED(hr);
 
         if (SUCCEEDED(hr) && fEngineRequestsRepaint)
@@ -352,20 +352,13 @@ void Renderer::TriggerSelection()
         // Get selection rectangles
         auto rects = _GetSelectionRects();
 
+        // Make a viewport representing the coordinates that are currently presentable.
+        const til::rect viewport{ til::size{ _pData->GetViewport().Dimensions() } };
+
         // Restrict all previous selection rectangles to inside the current viewport bounds
         for (auto& sr : _previousSelection)
         {
-            // Make the exclusive SMALL_RECT into a til::rect.
-            til::rect rc{ Viewport::FromExclusive(sr).ToInclusive() };
-
-            // Make a viewport representing the coordinates that are currently presentable.
-            const til::rect viewport{ til::size{ _pData->GetViewport().Dimensions() } };
-
-            // Intersect them so we only invalidate things that are still visible.
-            rc &= viewport;
-
-            // Convert back into the exclusive SMALL_RECT and store in the vector.
-            sr = Viewport::FromInclusive(rc.to_small_rect()).ToExclusive();
+            sr &= viewport;
         }
 
         FOREACH_ENGINE(pEngine)
@@ -389,8 +382,8 @@ void Renderer::TriggerSelection()
 // - True if something changed and we scrolled. False otherwise.
 bool Renderer::_CheckViewportAndScroll()
 {
-    SMALL_RECT const srOldViewport = _viewport.ToInclusive();
-    SMALL_RECT const srNewViewport = _pData->GetViewport().ToInclusive();
+    const auto srOldViewport = _viewport.ToInclusive();
+    const auto srNewViewport = _pData->GetViewport().ToInclusive();
 
     if (srOldViewport == srNewViewport)
     {
@@ -400,12 +393,12 @@ bool Renderer::_CheckViewportAndScroll()
     _viewport = Viewport::FromInclusive(srNewViewport);
 
     COORD coordDelta;
-    coordDelta.X = srOldViewport.Left - srNewViewport.Left;
-    coordDelta.Y = srOldViewport.Top - srNewViewport.Top;
+    coordDelta.X = gsl::narrow<short>(srOldViewport.Left - srNewViewport.Left);
+    coordDelta.Y = gsl::narrow<short>(srOldViewport.Top - srNewViewport.Top);
 
     FOREACH_ENGINE(engine)
     {
-        LOG_IF_FAILED(engine->UpdateViewport(srNewViewport));
+        LOG_IF_FAILED(engine->UpdateViewport( srNewViewport));
         LOG_IF_FAILED(engine->InvalidateScroll(&coordDelta));
     }
 
@@ -462,8 +455,8 @@ void Renderer::TriggerFlush(const bool circling)
 
     FOREACH_ENGINE(pEngine)
     {
-        bool fEngineRequestsRepaint = false;
-        HRESULT hr = pEngine->InvalidateFlush(circling, &fEngineRequestsRepaint);
+        auto fEngineRequestsRepaint = false;
+        auto hr = pEngine->InvalidateFlush(circling, &fEngineRequestsRepaint);
         LOG_IF_FAILED(hr);
 
         LOG_IF_FAILED(pEngine->InvalidateSelection(rects));
@@ -580,7 +573,7 @@ bool Renderer::s_IsSoftFontChar(const std::wstring_view& v, const size_t firstSo
     // TODO: 14560740 - The Window might be able to get at this info in a more sane manner
     FOREACH_ENGINE(pEngine)
     {
-        const HRESULT hr = LOG_IF_FAILED(pEngine->GetProposedFont(FontInfoDesired, FontInfo, iDpi));
+        const auto hr = LOG_IF_FAILED(pEngine->GetProposedFont(FontInfoDesired, FontInfo, iDpi));
         // We're looking for specifically S_OK, S_FALSE is not good enough.
         if (hr == S_OK)
         {
@@ -603,7 +596,7 @@ bool Renderer::s_IsSoftFontChar(const std::wstring_view& v, const size_t firstSo
 // - True if the codepoint is full-width (two wide), false if it is half-width (one wide).
 bool Renderer::IsGlyphWideByFont(const std::wstring_view glyph)
 {
-    bool fIsFullWidth = false;
+    auto fIsFullWidth = false;
 
     // There will only every really be two engines - the real head and the VT
     //      renderer. We won't know which is which, so iterate over them.
@@ -611,7 +604,7 @@ bool Renderer::IsGlyphWideByFont(const std::wstring_view glyph)
     // TODO: 14560740 - The Window might be able to get at this info in a more sane manner
     FOREACH_ENGINE(pEngine)
     {
-        const HRESULT hr = LOG_IF_FAILED(pEngine->IsGlyphWideByFont(glyph, &fIsFullWidth));
+        const auto hr = LOG_IF_FAILED(pEngine->IsGlyphWideByFont(glyph, &fIsFullWidth));
         // We're looking for specifically S_OK, S_FALSE is not good enough.
         if (hr == S_OK)
         {
@@ -697,7 +690,7 @@ void Renderer::_PaintBufferOutput(_In_ IRenderEngine* const pEngine)
             continue;
         }
 
-        auto dirty = Viewport::FromInclusive(dirtyRect.to_small_rect());
+        auto dirty = Viewport::FromExclusive(dirtyRect);
 
         // Shift the origin of the dirty region to match the underlying buffer so we can
         // compare the two regions directly for intersection.
@@ -716,7 +709,7 @@ void Renderer::_PaintBufferOutput(_In_ IRenderEngine* const pEngine)
         {
             // Calculate the boundaries of a single line. This is from the left to right edge of the dirty
             // area in width and exactly 1 tall.
-            const auto screenLine = SMALL_RECT{ redraw.Left(), row, redraw.RightInclusive(), row };
+            const auto screenLine = til::inclusive_rect{ redraw.Left(), row, redraw.RightInclusive(), row };
 
             // Convert the screen coordinates of the line to an equivalent
             // range of buffer cells, taking line rendition into account.
@@ -728,7 +721,7 @@ void Renderer::_PaintBufferOutput(_In_ IRenderEngine* const pEngine)
             // For example, the screen might say we need to paint line 1 because it is dirty but the viewport
             // is actually looking at line 26 relative to the buffer. This means that we need line 27 out
             // of the backing buffer to fill in line 1 of the screen.
-            const auto screenPosition = bufferLine.Origin() - COORD{ 0, view.Top() };
+            const auto screenPosition = bufferLine.Origin() - til::point{ 0, view.Top() };
 
             // Retrieve the cell information iterator limited to just this line we want to redraw.
             auto it = buffer.GetCellDataAt(bufferLine.Origin(), bufferLine);
@@ -760,7 +753,7 @@ void Renderer::_PaintBufferOutputHelper(_In_ IRenderEngine* const pEngine,
                                         const COORD target,
                                         const bool lineWrapped)
 {
-    auto globalInvert{ _renderSettings.GetRenderMode(RenderSettings::Mode::ScreenReversed) };
+    auto globalInvert = _renderSettings.GetRenderMode(RenderSettings::Mode::ScreenReversed);
 
     // If we have valid data, let's figure out how to draw it.
     if (it)
@@ -811,10 +804,10 @@ void Renderer::_PaintBufferOutputHelper(_In_ IRenderEngine* const pEngine,
             // Reset our flag to know when we're in the special circumstance
             // of attempting to draw only the right-half of a two-column character
             // as the first item in our run.
-            bool trimLeft = false;
+            auto trimLeft = false;
 
             // Run contains wide character (>1 columns)
-            bool containsWideCharacter = false;
+            auto containsWideCharacter = false;
 
             // This inner loop will accumulate clusters until the color changes.
             // When the color changes, it will save the new color off and break.
@@ -827,7 +820,7 @@ void Renderer::_PaintBufferOutputHelper(_In_ IRenderEngine* const pEngine,
                 const auto changedPatternOrFont = patternIds != thisPointPatterns || usingSoftFont != thisUsingSoftFont;
                 if (color != it->TextAttr() || changedPatternOrFont)
                 {
-                    auto newAttr{ it->TextAttr() };
+                    auto newAttr = it->TextAttr();
                     // foreground doesn't matter for runs of spaces (!)
                     // if we trick it . . . we call Paint far fewer times for cmatrix
                     if (!_IsAllSpaces(it->Chars()) || !newAttr.HasIdenticalVisualRepresentationForBlankSpace(color, globalInvert) || changedPatternOrFont)
@@ -841,7 +834,7 @@ void Renderer::_PaintBufferOutputHelper(_In_ IRenderEngine* const pEngine,
 
                 // Walk through the text data and turn it into rendering clusters.
                 // Keep the columnCount as we go to improve performance over digging it out of the vector at the end.
-                size_t columnCount = it->Columns();
+                auto columnCount = it->Columns();
 
                 // If we're on the first cluster to be added and it's marked as "trailing"
                 // (a.k.a. the right half of a two column character), then we need some special handling.
@@ -999,7 +992,7 @@ void Renderer::_PaintBufferOutputGridLineHelper(_In_ IRenderEngine* const pEngin
     if (lines.any())
     {
         // Get the current foreground color to render the lines.
-        const COLORREF rgb = _renderSettings.GetAttributeColors(textAttribute).first;
+        const auto rgb = _renderSettings.GetAttributeColors(textAttribute).first;
         // Draw the lines
         LOG_IF_FAILED(pEngine->PaintBufferGridLines(lines, rgb, cchLine, coordTarget));
     }
@@ -1020,7 +1013,7 @@ void Renderer::_PaintBufferOutputGridLineHelper(_In_ IRenderEngine* const pEngin
     if (_pData->IsCursorVisible())
     {
         // Get cursor position in buffer
-        COORD coordCursor = _pData->GetCursorPosition();
+        auto coordCursor = _pData->GetCursorPosition();
 
         // GH#3166: Only draw the cursor if it's actually in the viewport. It
         // might be on the line that's in that partially visible row at the
@@ -1047,13 +1040,13 @@ void Renderer::_PaintBufferOutputGridLineHelper(_In_ IRenderEngine* const pEngin
             // The viewport X offset is saved in the options and handled with a transform.
             coordCursor.Y -= view.Top;
 
-            COLORREF cursorColor = _renderSettings.GetColorTableEntry(TextColor::CURSOR_COLOR);
-            bool useColor = cursorColor != INVALID_COLOR;
+            auto cursorColor = _renderSettings.GetColorTableEntry(TextColor::CURSOR_COLOR);
+            auto useColor = cursorColor != INVALID_COLOR;
 
             // Build up the cursor parameters including position, color, and drawing options
             CursorOptions options;
             options.coordCursor = coordCursor;
-            options.viewportLeft = _pData->GetViewport().Left();
+            options.viewportLeft = gsl::narrow<short>(_pData->GetViewport().Left());
             options.lineRendition = lineRendition;
             options.ulCursorHeightPercent = _pData->GetCursorHeight();
             options.cursorPixelWidth = _pData->GetCursorPixelWidth();
@@ -1115,38 +1108,24 @@ void Renderer::_PaintOverlay(IRenderEngine& engine,
 {
     try
     {
-        // First get the screen buffer's viewport.
-        Viewport view = _pData->GetViewport();
-
         // Now get the overlay's viewport and adjust it to where it is supposed to be relative to the window.
-
-        SMALL_RECT srCaView = overlay.region.ToInclusive();
+        auto srCaView = overlay.region.ToExclusive();
         srCaView.Top += overlay.origin.Y;
         srCaView.Bottom += overlay.origin.Y;
         srCaView.Left += overlay.origin.X;
         srCaView.Right += overlay.origin.X;
-
-        // Set it up in a Viewport helper structure and trim it the IME viewport to be within the full console viewport.
-        Viewport viewConv = Viewport::FromInclusive(srCaView);
 
         gsl::span<const til::rect> dirtyAreas;
         LOG_IF_FAILED(engine.GetDirtyArea(dirtyAreas));
 
         for (const auto& rect : dirtyAreas)
         {
-            // Dirty is an inclusive rectangle, but oddly enough the IME was an exclusive one, so correct it.
-            auto srDirty = rect.to_small_rect();
-            srDirty.Bottom++;
-            srDirty.Right++;
-
-            if (viewConv.TrimToViewport(&srDirty))
+            if (const auto viewDirty = rect & srCaView)
             {
-                Viewport viewDirty = Viewport::FromInclusive(srDirty);
-
-                for (SHORT iRow = viewDirty.Top(); iRow < viewDirty.BottomInclusive(); iRow++)
+                for (auto iRow = viewDirty.Top; iRow < viewDirty.Bottom; iRow++)
                 {
-                    const COORD target{ viewDirty.Left(), iRow };
-                    const auto source = target - overlay.origin;
+                    const til::point target{ viewDirty.Left, iRow };
+                    const auto source = target - til::wrap_coord(overlay.origin);
 
                     auto it = overlay.buffer.GetCellLineDataAt(source);
 
@@ -1195,15 +1174,13 @@ void Renderer::_PaintSelection(_In_ IRenderEngine* const pEngine)
 
         // Get selection rectangles
         const auto rectangles = _GetSelectionRects();
-        for (auto rect : rectangles)
+        for (const auto& rect : rectangles)
         {
             for (auto& dirtyRect : dirtyAreas)
             {
                 // Make a copy as `TrimToViewport` will manipulate it and
                 // can destroy it for the next dirtyRect to test against.
-                auto rectCopy = rect;
-                Viewport dirtyView = Viewport::FromInclusive(dirtyRect.to_small_rect());
-                if (dirtyView.TrimToViewport(&rectCopy))
+                if (const auto rectCopy = rect & dirtyRect)
                 {
                     LOG_IF_FAILED(pEngine->PaintSelection(rectCopy));
                 }
@@ -1252,14 +1229,14 @@ void Renderer::_PaintSelection(_In_ IRenderEngine* const pEngine)
 // - Helper to determine the selected region of the buffer.
 // Return Value:
 // - A vector of rectangles representing the regions to select, line by line.
-std::vector<SMALL_RECT> Renderer::_GetSelectionRects() const
+std::vector<til::rect> Renderer::_GetSelectionRects() const
 {
     const auto& buffer = _pData->GetTextBuffer();
     auto rects = _pData->GetSelectionRects();
     // Adjust rectangles to viewport
-    Viewport view = _pData->GetViewport();
+    auto view = _pData->GetViewport();
 
-    std::vector<SMALL_RECT> result;
+    std::vector<til::rect> result;
     result.reserve(rects.size());
 
     for (auto rect : rects)
@@ -1294,16 +1271,9 @@ void Renderer::_ScrollPreviousSelection(const til::point delta)
 {
     if (delta != til::point{ 0, 0 })
     {
-        for (auto& sr : _previousSelection)
+        for (auto& rc : _previousSelection)
         {
-            // Get a rectangle representing this piece of the selection.
-            til::rect rc{ Viewport::FromExclusive(sr).ToInclusive() };
-
-            // Offset the entire existing rectangle by the delta.
             rc += delta;
-
-            // Store it back into the vector.
-            sr = Viewport::FromInclusive(rc.to_small_rect()).ToExclusive();
         }
     }
 }

@@ -25,10 +25,10 @@ namespace Microsoft::Console::Render
         RECT GetDisplaySize();
 
         // IRenderEngine Members
-        [[nodiscard]] HRESULT Invalidate(const SMALL_RECT* const psrRegion) noexcept override;
-        [[nodiscard]] HRESULT InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept override;
+        [[nodiscard]] HRESULT Invalidate(const til::rect* const psrRegion) noexcept override;
+        [[nodiscard]] HRESULT InvalidateCursor(const til::rect* const psrRegion) noexcept override;
         [[nodiscard]] HRESULT InvalidateSystem(const RECT* const prcDirtyClient) noexcept override;
-        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept override;
+        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept override;
         [[nodiscard]] HRESULT InvalidateScroll(const COORD* const pcoordDelta) noexcept override;
         [[nodiscard]] HRESULT InvalidateAll() noexcept override;
         [[nodiscard]] HRESULT PrepareForTeardown(_Out_ bool* const pForcePaint) noexcept override;
@@ -45,7 +45,7 @@ namespace Microsoft::Console::Render
                                               const bool trimLeft,
                                               const bool lineWrapped) noexcept override;
         [[nodiscard]] HRESULT PaintBufferGridLines(GridLineSet const lines, COLORREF const color, size_t const cchLine, COORD const coordTarget) noexcept override;
-        [[nodiscard]] HRESULT PaintSelection(const SMALL_RECT rect) noexcept override;
+        [[nodiscard]] HRESULT PaintSelection(const til::rect& rect) noexcept override;
 
         [[nodiscard]] HRESULT PaintCursor(const CursorOptions& options) noexcept override;
 

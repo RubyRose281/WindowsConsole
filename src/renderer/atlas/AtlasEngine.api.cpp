@@ -40,7 +40,7 @@ constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
 
 #pragma region IRenderEngine
 
-[[nodiscard]] HRESULT AtlasEngine::Invalidate(const SMALL_RECT* const psrRegion) noexcept
+[[nodiscard]] HRESULT AtlasEngine::Invalidate(const til::rect* const psrRegion) noexcept
 {
     //assert(psrRegion->Top < psrRegion->Bottom && psrRegion->Top >= 0 && psrRegion->Bottom <= _api.cellCount.y);
 
@@ -50,7 +50,7 @@ constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
     return S_OK;
 }
 
-[[nodiscard]] HRESULT AtlasEngine::InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept
+[[nodiscard]] HRESULT AtlasEngine::InvalidateCursor(const til::rect* const psrRegion) noexcept
 {
     //assert(psrRegion->Left <= psrRegion->Right && psrRegion->Left >= 0 && psrRegion->Right <= _api.cellCount.x);
     //assert(psrRegion->Top <= psrRegion->Bottom && psrRegion->Top >= 0 && psrRegion->Bottom <= _api.cellCount.y);
@@ -74,13 +74,13 @@ constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
     const auto bottom = prcDirtyClient->bottom / _api.fontMetrics.cellSize.y;
 
     // BeginPaint() protects against invalid out of bounds numbers.
-    SMALL_RECT rect;
-    rect.Top = gsl::narrow_cast<SHORT>(top);
-    rect.Bottom = gsl::narrow_cast<SHORT>(bottom);
+    til::rect rect;
+    rect.Top = top;
+    rect.Bottom = bottom;
     return Invalidate(&rect);
 }
 
-[[nodiscard]] HRESULT AtlasEngine::InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept
+[[nodiscard]] HRESULT AtlasEngine::InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept
 {
     for (const auto& rect : rectangles)
     {
@@ -306,14 +306,14 @@ HRESULT AtlasEngine::Enable() noexcept
 {
     assert(_api.fontMetrics.cellSize.x != 0);
     assert(_api.fontMetrics.cellSize.y != 0);
-    return Types::Viewport::FromDimensions(viewInPixels.Origin(), COORD{ gsl::narrow_cast<short>(viewInPixels.Width() / _api.fontMetrics.cellSize.x), gsl::narrow_cast<short>(viewInPixels.Height() / _api.fontMetrics.cellSize.y) });
+    return Types::Viewport::FromDimensions(viewInPixels.Origin(), { viewInPixels.Width() / _api.fontMetrics.cellSize.x, viewInPixels.Height() / _api.fontMetrics.cellSize.y });
 }
 
 [[nodiscard]] Microsoft::Console::Types::Viewport AtlasEngine::GetViewportInPixels(const Types::Viewport& viewInCharacters) const noexcept
 {
     assert(_api.fontMetrics.cellSize.x != 0);
     assert(_api.fontMetrics.cellSize.y != 0);
-    return Types::Viewport::FromDimensions(viewInCharacters.Origin(), COORD{ gsl::narrow_cast<short>(viewInCharacters.Width() * _api.fontMetrics.cellSize.x), gsl::narrow_cast<short>(viewInCharacters.Height() * _api.fontMetrics.cellSize.y) });
+    return Types::Viewport::FromDimensions(viewInCharacters.Origin(), { viewInCharacters.Width() * _api.fontMetrics.cellSize.x, viewInCharacters.Height() * _api.fontMetrics.cellSize.y });
 }
 
 void AtlasEngine::SetAntialiasingMode(const D2D1_TEXT_ANTIALIAS_MODE antialiasingMode) noexcept

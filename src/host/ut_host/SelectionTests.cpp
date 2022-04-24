@@ -472,7 +472,7 @@ class SelectionInputTests
 
         // backup text info position over remainder of text execution duration
         TextBuffer& textBuffer = gci.GetActiveOutputBuffer().GetTextBuffer();
-        COORD coordOldTextInfoPos;
+        til::point coordOldTextInfoPos;
         coordOldTextInfoPos.X = textBuffer.GetCursor().GetPosition().X;
         coordOldTextInfoPos.Y = textBuffer.GetCursor().GetPosition().Y;
 
@@ -540,8 +540,8 @@ class SelectionInputTests
         screenInfo.Write(OutputCellIterator(text));
 
         // Get the left and right side of the text we inserted (right is one past the end)
-        const COORD left = { 0, 0 };
-        const COORD right = { gsl::narrow<SHORT>(text.length()), 0 };
+        const til::point left;
+        const til::point right{ gsl::narrow<til::CoordType>(text.length()), 0 };
 
         // Get the selection instance and buffer size
         auto& sel = Selection::Instance();
@@ -560,7 +560,7 @@ class SelectionInputTests
         {
             // We expect the result to be left of where we started.
             // It will point at the character just right of the space (or the beginning of the line).
-            COORD resultExpected = point;
+            auto resultExpected = point;
 
             do
             {
@@ -587,8 +587,8 @@ class SelectionInputTests
         screenInfo.Write(OutputCellIterator(text));
 
         // Get the left and right side of the text we inserted (right is one past the end)
-        const COORD left = { 0, 0 };
-        const COORD right = { gsl::narrow<SHORT>(text.length()), 0 };
+        const til::point left;
+        const til::point right = { gsl::narrow<til::CoordType>(text.length()), 0 };
 
         // Get the selection instance and buffer size
         auto& sel = Selection::Instance();
@@ -607,7 +607,7 @@ class SelectionInputTests
         {
             // We expect the result to be right of where we started.
 
-            COORD resultExpected = point;
+            til::point resultExpected = point;
 
             do
             {

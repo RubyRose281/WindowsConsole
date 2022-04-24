@@ -498,7 +498,7 @@ extern HRESULT _ConvertCellsToWInplace(const UINT codepage,
                                                              const Microsoft::Console::Types::Viewport& requestRectangle,
                                                              Microsoft::Console::Types::Viewport& writtenRectangle) noexcept
 {
-    COORD cursor{ requestRectangle.Left(), requestRectangle.Top() };
+    auto cursor = requestRectangle.Origin();
 
     const size_t width = requestRectangle.Width();
     size_t pos = 0;

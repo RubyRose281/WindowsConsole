@@ -227,7 +227,7 @@ public:
         return E_NOTIMPL;
     }
 
-    void ChangeViewport(const SMALL_RECT /*NewWindow*/)
+    void ChangeViewport(const til::inclusive_rect& /*NewWindow*/)
     {
         return;
     }
@@ -254,8 +254,8 @@ public:
 
     // specific endpoint range
     HRESULT CreateTextRange(_In_ IRawElementProviderSimple* const /*pProvider*/,
-                            const COORD /*start*/,
-                            const COORD /*end*/,
+                            const til::point /*start*/,
+                            const til::point /*end*/,
                             const std::wstring_view /*wordDelimiters*/,
                             _COM_Outptr_result_maybenull_ Microsoft::Console::Types::UiaTextRangeBase** /*ppUtr*/) override
     {
@@ -1856,7 +1856,7 @@ class UiaTextRangeTests
         const auto secondChar{ point_offset_by_char(origin, bufferSize, 2) };
         const auto fifthChar{ point_offset_by_char(origin, bufferSize, 5) };
         const auto sixthChar{ point_offset_by_char(origin, bufferSize, 6) };
-        const til::point documentEnd{ bufferSize.left, (bufferSize.height() / 2) + 1 };
+        const til::point documentEnd{ bufferSize.left, bufferSize.height() / 2 + 1 };
 
         // Populate buffer
         //   Split the line into 5 segments alternating between "X" and whitespace

@@ -505,9 +505,9 @@ void Menu::s_PropertiesUpdate(PCONSOLE_STATE_INFO pStateInfo)
         }
 
         // Now adjust the buffer size first to whatever we want it to be if it's different than before.
-        const COORD coordScreenBufferSize = ScreenInfo.GetBufferSize().Dimensions();
-        if (coordBuffer.X != coordScreenBufferSize.X ||
-            coordBuffer.Y != coordScreenBufferSize.Y)
+        const auto coordScreenBufferSize = ScreenInfo.GetBufferSize().Dimensions();
+        if (coordBuffer.X != coordScreenBufferSize.width ||
+            coordBuffer.Y != coordScreenBufferSize.height)
         {
             CommandLine* const pCommandLine = &CommandLine::Instance();
 

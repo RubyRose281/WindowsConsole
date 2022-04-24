@@ -145,15 +145,13 @@ bool InteractDispatch::MoveCursor(const VTInt row, const VTInt col)
     coordCursor.Y = std::clamp(coordCursor.Y, viewport.Top, viewport.Bottom);
     coordCursor.X = std::clamp(coordCursor.X, viewport.Left, viewport.Right);
 
-    const auto coordCursorShort = til::unwrap_coord(coordCursor);
-
     // MSFT: 15813316 - Try to use this MoveCursor call to inherit the cursor position.
     auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    RETURN_IF_FAILED(gci.GetVtIo()->SetCursorPosition(coordCursorShort));
+    RETURN_IF_FAILED(gci.GetVtIo()->SetCursorPosition( coordCursor));
 
     // Finally, attempt to set the adjusted cursor position back into the console.
     auto& cursor = _pConApi->GetTextBuffer().GetCursor();
-    cursor.SetPosition(coordCursorShort);
+    cursor.SetPosition(coordCursor);
     cursor.SetHasMoved(true);
     return true;
 }

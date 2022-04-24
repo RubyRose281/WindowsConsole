@@ -153,7 +153,7 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
         }
 
 #ifdef _WINCONTYPES_
-        explicit constexpr size(const COORD other) noexcept :
+        constexpr size(const COORD other) noexcept :
             width{ other.X }, height{ other.Y }
         {
         }
@@ -161,6 +161,11 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
         constexpr COORD to_win32_coord() const
         {
             return { gsl::narrow<short>(width), gsl::narrow<short>(height) };
+        }
+
+        constexpr operator COORD() const
+        {
+            return to_win32_coord();
         }
 #endif
 

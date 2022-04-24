@@ -61,10 +61,10 @@ namespace Microsoft::Console::Render
         [[nodiscard]] virtual HRESULT Present() noexcept = 0;
         [[nodiscard]] virtual HRESULT PrepareForTeardown(_Out_ bool* pForcePaint) noexcept = 0;
         [[nodiscard]] virtual HRESULT ScrollFrame() noexcept = 0;
-        [[nodiscard]] virtual HRESULT Invalidate(const SMALL_RECT* psrRegion) noexcept = 0;
-        [[nodiscard]] virtual HRESULT InvalidateCursor(const SMALL_RECT* psrRegion) noexcept = 0;
+        [[nodiscard]] virtual HRESULT Invalidate(const til::rect* psrRegion) noexcept = 0;
+        [[nodiscard]] virtual HRESULT InvalidateCursor(const til::rect* psrRegion) noexcept = 0;
         [[nodiscard]] virtual HRESULT InvalidateSystem(const RECT* prcDirtyClient) noexcept = 0;
-        [[nodiscard]] virtual HRESULT InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept = 0;
+        [[nodiscard]] virtual HRESULT InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept = 0;
         [[nodiscard]] virtual HRESULT InvalidateScroll(const COORD* pcoordDelta) noexcept = 0;
         [[nodiscard]] virtual HRESULT InvalidateAll() noexcept = 0;
         [[nodiscard]] virtual HRESULT InvalidateFlush(_In_ const bool circled, _Out_ bool* const pForcePaint) noexcept = 0;
@@ -76,7 +76,7 @@ namespace Microsoft::Console::Render
         [[nodiscard]] virtual HRESULT PaintBackground() noexcept = 0;
         [[nodiscard]] virtual HRESULT PaintBufferLine(gsl::span<const Cluster> clusters, COORD coord, bool fTrimLeft, bool lineWrapped) noexcept = 0;
         [[nodiscard]] virtual HRESULT PaintBufferGridLines(GridLineSet lines, COLORREF color, size_t cchLine, COORD coordTarget) noexcept = 0;
-        [[nodiscard]] virtual HRESULT PaintSelection(SMALL_RECT rect) noexcept = 0;
+        [[nodiscard]] virtual HRESULT PaintSelection(const til::rect& rect) noexcept = 0;
         [[nodiscard]] virtual HRESULT PaintCursor(const CursorOptions& options) noexcept = 0;
         [[nodiscard]] virtual HRESULT UpdateDrawingBrushes(const TextAttribute& textAttributes, const RenderSettings& renderSettings, gsl::not_null<IRenderData*> pData, bool usingSoftFont, bool isSettingDefaultBrushes) noexcept = 0;
         [[nodiscard]] virtual HRESULT UpdateFont(const FontInfoDesired& FontInfoDesired, _Out_ FontInfo& FontInfo) noexcept = 0;

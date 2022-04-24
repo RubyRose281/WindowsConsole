@@ -30,8 +30,8 @@ HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData,
 // specific endpoint range
 HRESULT UiaTextRange::RuntimeClassInitialize(_In_ IUiaData* pData,
                                              _In_ IRawElementProviderSimple* const pProvider,
-                                             const COORD start,
-                                             const COORD end,
+                                             const til::point start,
+                                             const til::point end,
                                              bool blockRange,
                                              const std::wstring_view wordDelimiters) noexcept
 {
@@ -77,14 +77,18 @@ IFACEMETHODIMP UiaTextRange::Clone(_Outptr_result_maybenull_ ITextRangeProvider*
     return S_OK;
 }
 
-void UiaTextRange::_TranslatePointToScreen(LPPOINT clientPoint) const
+void UiaTextRange::_TranslatePointToScreen(til::point* clientPoint) const
 {
-    ClientToScreen(_getWindowHandle(), clientPoint);
+    auto p = clientPoint->to_win32_point();
+    ClientToScreen(_getWindowHandle(), &p);
+    *clientPoint = til::point{ p };
 }
 
-void UiaTextRange::_TranslatePointFromScreen(LPPOINT screenPoint) const
+void UiaTextRange::_TranslatePointFromScreen(til::point* screenPoint) const
 {
-    ScreenToClient(_getWindowHandle(), screenPoint);
+    auto p = screenPoint->to_win32_point();
+    ScreenToClient(_getWindowHandle(), &p);
+    *screenPoint = til::point{ p };
 }
 
 HWND UiaTextRange::_getWindowHandle() const

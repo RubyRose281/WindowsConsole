@@ -545,8 +545,8 @@ void ApiRoutines::GetLargestConsoleWindowSizeImpl(const SCREEN_INFORMATION& cont
         auto overflow = screenInfo.GetViewport().BottomRightExclusive() - screenInfo.GetBufferSize().Dimensions();
         if (overflow.X > 0 || overflow.Y > 0)
         {
-            overflow = { std::max<SHORT>(overflow.X, 0), std::max<SHORT>(overflow.Y, 0) };
-            RETURN_IF_NTSTATUS_FAILED(screenInfo.SetViewportOrigin(false, -overflow, false));
+            overflow = { -std::max(overflow.X, 0), -std::max(overflow.Y, 0) };
+            RETURN_IF_NTSTATUS_FAILED(screenInfo.SetViewportOrigin(false, overflow, false));
         }
 
         // And also that the cursor position is clamped within the buffer boundaries.
@@ -655,8 +655,8 @@ void ApiRoutines::GetLargestConsoleWindowSizeImpl(const SCREEN_INFORMATION& cont
         auto overflow = context.GetViewport().BottomRightExclusive() - context.GetBufferSize().Dimensions();
         if (overflow.X > 0 || overflow.Y > 0)
         {
-            overflow = { std::max<SHORT>(overflow.X, 0), std::max<SHORT>(overflow.Y, 0) };
-            RETURN_IF_NTSTATUS_FAILED(context.SetViewportOrigin(false, -overflow, false));
+            overflow = { -std::max(overflow.X, 0), -std::max(overflow.Y, 0) };
+            RETURN_IF_NTSTATUS_FAILED(context.SetViewportOrigin(false, overflow, false));
         }
 
         // And also that the cursor position is clamped within the buffer boundaries.
@@ -925,10 +925,10 @@ void ApiRoutines::GetLargestConsoleWindowSizeImpl(const SCREEN_INFORMATION& cont
             const auto currentBufferDimensions = buffer.GetBufferSize().Dimensions();
             const bool sourceIsWholeBuffer = (source.Top == 0) &&
                                              (source.Left == 0) &&
-                                             (source.Right == currentBufferDimensions.X) &&
-                                             (source.Bottom == currentBufferDimensions.Y);
+                                             (source.Right == currentBufferDimensions.width) &&
+                                             (source.Bottom == currentBufferDimensions.height);
             const bool targetIsNegativeBufferHeight = (target.X == 0) &&
-                                                      (target.Y == -currentBufferDimensions.Y);
+                                                      (target.Y == -currentBufferDimensions.height);
             const bool noClipProvided = clip == std::nullopt;
             const bool fillIsBlank = (fillCharacter == UNICODE_SPACE) &&
                                      (fillAttribute == buffer.GetAttributes().GetLegacyAttributes());

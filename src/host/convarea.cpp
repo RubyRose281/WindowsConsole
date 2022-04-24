@@ -38,38 +38,31 @@ void WriteConvRegionToScreen(const SCREEN_INFORMATION& ScreenInfo,
             const auto areaInfo = ConvAreaInfo.GetAreaBufferInfo();
 
             // Do clipping region
-            SMALL_RECT Region;
+            til::inclusive_rect Region;
             Region.Left = currentViewport.Left + areaInfo.rcViewCaWindow.Left + areaInfo.coordConView.X;
             Region.Right = Region.Left + (areaInfo.rcViewCaWindow.Right - areaInfo.rcViewCaWindow.Left);
             Region.Top = currentViewport.Top + areaInfo.rcViewCaWindow.Top + areaInfo.coordConView.Y;
             Region.Bottom = Region.Top + (areaInfo.rcViewCaWindow.Bottom - areaInfo.rcViewCaWindow.Top);
 
-            SMALL_RECT ClippedRegion;
-            ClippedRegion.Left = std::max(Region.Left, currentViewport.Left);
-            ClippedRegion.Top = std::max(Region.Top, currentViewport.Top);
-            ClippedRegion.Right = std::min(Region.Right, currentViewport.Right);
-            ClippedRegion.Bottom = std::min(Region.Bottom, currentViewport.Bottom);
+            Region.Left = std::max(Region.Left, currentViewport.Left);
+            Region.Top = std::max(Region.Top, currentViewport.Top);
+            Region.Right = std::min(Region.Right, currentViewport.Right);
+            Region.Bottom = std::min(Region.Bottom, currentViewport.Bottom);
 
-            if (IsValidSmallRect(&ClippedRegion))
+            if (Region)
             {
-                Region = ClippedRegion;
-                ClippedRegion.Left = std::max(Region.Left, convRegion.Left());
-                ClippedRegion.Top = std::max(Region.Top, convRegion.Top());
-                ClippedRegion.Right = std::min(Region.Right, convRegion.RightInclusive());
-                ClippedRegion.Bottom = std::min(Region.Bottom, convRegion.BottomInclusive());
-                if (IsValidSmallRect(&ClippedRegion))
+                Region.Left = std::max(Region.Left, convRegion.Left());
+                Region.Top = std::max(Region.Top, convRegion.Top());
+                Region.Right = std::min(Region.Right, convRegion.RightInclusive());
+                Region.Bottom = std::min(Region.Bottom, convRegion.BottomInclusive());
+                if (Region)
                 {
                     // if we have a renderer, we need to update.
                     // we've already confirmed (above with an early return) that we're on conversion areas that are a part of the active (visible/rendered) screen
                     // so send invalidates to those regions such that we're queried for data on the next frame and repainted.
                     if (ServiceLocator::LocateGlobals().pRender != nullptr)
                     {
-                        // convert inclusive rectangle to exclusive rectangle
-                        SMALL_RECT srExclusive = ClippedRegion;
-                        srExclusive.Right++;
-                        srExclusive.Bottom++;
-
-                        ServiceLocator::LocateGlobals().pRender->TriggerRedraw(Viewport::FromExclusive(srExclusive));
+                        ServiceLocator::LocateGlobals().pRender->TriggerRedraw(Viewport::FromInclusive(Region));
                     }
                 }
             }

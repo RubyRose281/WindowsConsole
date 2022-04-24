@@ -161,12 +161,12 @@ bool WddmConEngine::IsInitialized()
     return WDDMConEnableDisplayAccess((PHANDLE)_hWddmConCtx, FALSE);
 }
 
-[[nodiscard]] HRESULT WddmConEngine::Invalidate(const SMALL_RECT* const /*psrRegion*/) noexcept
+[[nodiscard]] HRESULT WddmConEngine::Invalidate(const til::rect* const /*psrRegion*/) noexcept
 {
     return S_OK;
 }
 
-[[nodiscard]] HRESULT WddmConEngine::InvalidateCursor(const SMALL_RECT* const /*psrRegion*/) noexcept
+[[nodiscard]] HRESULT WddmConEngine::InvalidateCursor(const til::rect* const /*psrRegion*/) noexcept
 {
     return S_OK;
 }
@@ -176,7 +176,7 @@ bool WddmConEngine::IsInitialized()
     return S_OK;
 }
 
-[[nodiscard]] HRESULT WddmConEngine::InvalidateSelection(const std::vector<SMALL_RECT>& /*rectangles*/) noexcept
+[[nodiscard]] HRESULT WddmConEngine::InvalidateSelection(const std::vector<til::rect>& /*rectangles*/) noexcept
 {
     return S_OK;
 }
@@ -289,7 +289,7 @@ bool WddmConEngine::IsInitialized()
     return S_OK;
 }
 
-[[nodiscard]] HRESULT WddmConEngine::PaintSelection(const SMALL_RECT /*rect*/) noexcept
+[[nodiscard]] HRESULT WddmConEngine::PaintSelection(const til::rect& /*rect*/) noexcept
 {
     return S_OK;
 }

@@ -47,6 +47,36 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
         {
             return __builtin_memcmp(this, &rhs, sizeof(rhs)) != 0;
         }
+
+        explicit constexpr operator bool() const noexcept
+        {
+            return (left >= 0) & (top >= 0) &
+                   (right > left) & (bottom > top);
+        }
+
+#ifdef _WINCONTYPES_
+        constexpr inclusive_rect() = default;
+
+        constexpr inclusive_rect(CoordType left, CoordType top, CoordType right, CoordType bottom) noexcept :
+            left{ left }, top{ top }, right{ right }, bottom{ bottom }
+        {
+        }
+
+        constexpr inclusive_rect(const SMALL_RECT other) noexcept :
+            left{ other.Left }, top{ other.Top }, right{ other.Right }, bottom{ other.Bottom }
+        {
+        }
+
+        constexpr operator SMALL_RECT() const
+        {
+            return {
+                gsl::narrow<short>(left),
+                gsl::narrow<short>(top),
+                gsl::narrow<short>(right),
+                gsl::narrow<short>(bottom),
+            };
+        }
+#endif
     };
 
     constexpr inclusive_rect wrap_small_rect(const SMALL_RECT& rect) noexcept
@@ -795,7 +825,7 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
 #ifdef _WINCONTYPES_
         // NOTE: This will convert from INCLUSIVE on the way in because
         // that is generally how SMALL_RECTs are handled in console code and via the APIs.
-        explicit constexpr rect(const SMALL_RECT other) noexcept :
+        constexpr rect(const SMALL_RECT other) noexcept :
             rect{ other.Left, other.Top, other.Right + 1, other.Bottom + 1 }
         {
         }
@@ -814,6 +844,11 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
                 gsl::narrow<short>(right - 1),
                 gsl::narrow<short>(bottom - 1),
             };
+        }
+
+        constexpr operator SMALL_RECT() const
+        {
+            return to_small_rect();
         }
 
         // NOTE: This will convert from INCLUSIVE on the way in because

@@ -143,12 +143,12 @@ std::pair<COORD, COORD> Search::GetFoundLocation() const noexcept
 COORD Search::s_GetInitialAnchor(IUiaData& uiaData, const Direction direction)
 {
     const auto& textBuffer = uiaData.GetTextBuffer();
-    const COORD textBufferEndPosition = uiaData.GetTextBufferEndPosition();
+    const auto textBufferEndPosition = til::wrap_coord(uiaData.GetTextBufferEndPosition());
     if (uiaData.IsSelectionActive())
     {
         // Convert the screen position of the selection anchor into an equivalent
         // buffer position to start searching, taking line rendition into account.
-        auto anchor = textBuffer.ScreenToBufferPosition(uiaData.GetSelectionAnchor());
+        auto anchor = til::wrap_coord(textBuffer.ScreenToBufferPosition(uiaData.GetSelectionAnchor()));
 
         if (direction == Direction::Forward)
         {
@@ -271,7 +271,9 @@ wchar_t Search::_ApplySensitivity(const wchar_t wch) const noexcept
 // - coord - Updated by function to increment one position (will wrap X and Y direction)
 void Search::_IncrementCoord(COORD& coord) const noexcept
 {
-    _uiaData.GetTextBuffer().GetSize().IncrementInBoundsCircular(coord);
+    auto c = til::wrap_coord(coord);
+    _uiaData.GetTextBuffer().GetSize().IncrementInBoundsCircular(c);
+    coord = c;
 }
 
 // Routine Description:
@@ -280,7 +282,9 @@ void Search::_IncrementCoord(COORD& coord) const noexcept
 // - coord - Updated by function to decrement one position (will wrap X and Y direction)
 void Search::_DecrementCoord(COORD& coord) const noexcept
 {
-    _uiaData.GetTextBuffer().GetSize().DecrementInBoundsCircular(coord);
+    auto c = til::wrap_coord(coord);
+    _uiaData.GetTextBuffer().GetSize().DecrementInBoundsCircular(c);
+    coord = c;
 }
 
 // Routine Description:

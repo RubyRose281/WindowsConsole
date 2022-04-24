@@ -329,7 +329,7 @@ void TextBufferIteratorTests::BoolOperatorCell()
     Log::Comment(L"For cells, also check incrementing past the end.");
     const auto& outputBuffer = ServiceLocator::LocateGlobals().getConsoleInformation().GetActiveOutputBuffer();
     const auto size = outputBuffer.GetBufferSize().Dimensions();
-    TextBufferCellIterator it(outputBuffer.GetTextBuffer(), { size.X - 1, size.Y - 1 });
+    TextBufferCellIterator it(outputBuffer.GetTextBuffer(), til::point{ size.width - 1, size.height - 1 });
     VERIFY_IS_TRUE(it);
     it++;
     VERIFY_IS_FALSE(it);
@@ -575,9 +575,10 @@ void TextBufferIteratorTests::ConstructedLimits()
 
     // Verify throws for limit not inside buffer
     const auto bufferSize = textBuffer.GetSize();
+    const auto invalidViewport = Viewport::FromInclusive({bufferSize.Left(), bufferSize.Top(), bufferSize.RightInclusive() + 1, bufferSize.BottomInclusive() + 1});
     VERIFY_THROWS_SPECIFIC(TextBufferCellIterator(textBuffer,
                                                   pos,
-                                                  Microsoft::Console::Types::Viewport::FromInclusive(bufferSize.ToExclusive())),
+                                                  invalidViewport),
                            wil::ResultException,
                            [](wil::ResultException& e) { return e.GetErrorCode() == E_INVALIDARG; });
 }

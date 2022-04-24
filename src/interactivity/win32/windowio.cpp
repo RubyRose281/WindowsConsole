@@ -138,10 +138,10 @@ bool HandleTerminalMouseEvent(const COORD cMousePosition,
         // terminal buffer. This is likely to happen when the user drags the cursor offscreen.
         // We shouldn't throw away perfectly good events when they're offscreen, so we just
         // clamp them to be within the range [(0, 0), (W, H)].
-        auto clampedPosition{ cMousePosition };
+        auto clampedPosition = til::wrap_coord(cMousePosition);
         const auto clampViewport{ gci.GetActiveOutputBuffer().GetViewport().ToOrigin() };
         clampViewport.Clamp(clampedPosition);
-        fWasHandled = gci.GetActiveInputBuffer()->GetTerminalInput().HandleMouse(til::wrap_coord(clampedPosition), uiButton, sModifierKeystate, sWheelDelta, state);
+        fWasHandled = gci.GetActiveInputBuffer()->GetTerminalInput().HandleMouse(clampedPosition, uiButton, sModifierKeystate, sWheelDelta, state);
     }
 
     return fWasHandled;
@@ -612,24 +612,20 @@ BOOL HandleMouseEvent(const SCREEN_INFORMATION& ScreenInfo,
     //  results on systems with multiple monitors. Systems with multiple monitors
     //  can have negative x- and y- coordinates, and LOWORD and HIWORD treat the
     //  coordinates as unsigned quantities.
-    short x = GET_X_LPARAM(lParam);
-    short y = GET_Y_LPARAM(lParam);
+    auto x = GET_X_LPARAM(lParam);
+    auto y = GET_Y_LPARAM(lParam);
 
-    COORD MousePosition;
+    til::point MousePosition{ x, y };
     // If it's a *WHEEL event, it's in screen coordinates, not window
     if (Message == WM_MOUSEWHEEL || Message == WM_MOUSEHWHEEL)
     {
         POINT coords = { x, y };
         ScreenToClient(ServiceLocator::LocateConsoleWindow()->GetWindowHandle(), &coords);
-        MousePosition = { (SHORT)coords.x, (SHORT)coords.y };
-    }
-    else
-    {
-        MousePosition = { x, y };
+        MousePosition = { coords.x, coords.y };
     }
 
     // translate mouse position into characters, if necessary.
-    COORD ScreenFontSize = ScreenInfo.GetScreenFontSize();
+    auto ScreenFontSize = ScreenInfo.GetScreenFontSize();
     MousePosition.X /= ScreenFontSize.X;
     MousePosition.Y /= ScreenFontSize.Y;
 
@@ -683,24 +679,24 @@ BOOL HandleMouseEvent(const SCREEN_INFORMATION& ScreenInfo,
     MousePosition.X += ScreenInfo.GetViewport().Left();
     MousePosition.Y += ScreenInfo.GetViewport().Top();
 
-    const COORD coordScreenBufferSize = ScreenInfo.GetBufferSize().Dimensions();
+    const auto coordScreenBufferSize = ScreenInfo.GetBufferSize().Dimensions();
 
     // make sure mouse position is clipped to screen buffer
     if (MousePosition.X < 0)
     {
         MousePosition.X = 0;
     }
-    else if (MousePosition.X >= coordScreenBufferSize.X)
+    else if (MousePosition.X >= coordScreenBufferSize.width)
     {
-        MousePosition.X = coordScreenBufferSize.X - 1;
+        MousePosition.X = coordScreenBufferSize.width - 1;
     }
     if (MousePosition.Y < 0)
     {
         MousePosition.Y = 0;
     }
-    else if (MousePosition.Y >= coordScreenBufferSize.Y)
+    else if (MousePosition.Y >= coordScreenBufferSize.height)
     {
-        MousePosition.Y = coordScreenBufferSize.Y - 1;
+        MousePosition.Y = coordScreenBufferSize.height - 1;
     }
 
     // Process the transparency mousewheel message before the others so that we can
@@ -794,13 +790,13 @@ BOOL HandleMouseEvent(const SCREEN_INFORMATION& ScreenInfo,
         else if (Message == WM_LBUTTONDBLCLK)
         {
             // on double-click, attempt to select a "word" beneath the cursor
-            const COORD selectionAnchor = pSelection->GetSelectionAnchor();
+            const auto selectionAnchor = pSelection->GetSelectionAnchor();
 
-            if (MousePosition == selectionAnchor)
+            if (MousePosition == til::wrap_coord(selectionAnchor))
             {
                 try
                 {
-                    const std::pair<COORD, COORD> wordBounds = ScreenInfo.GetWordBoundary(MousePosition);
+                    const auto wordBounds = ScreenInfo.GetWordBoundary(MousePosition);
                     MousePosition = wordBounds.second;
                     // update both ends of the selection since we may have adjusted the anchor in some circumstances.
                     pSelection->AdjustSelection(wordBounds.first, wordBounds.second);
@@ -934,7 +930,7 @@ BOOL HandleMouseEvent(const SCREEN_INFORMATION& ScreenInfo,
     ULONG EventsWritten = 0;
     try
     {
-        std::unique_ptr<MouseEvent> mouseEvent = std::make_unique<MouseEvent>(
+        auto mouseEvent = std::make_unique<MouseEvent>(
             MousePosition,
             ConvertMouseButtonState(ButtonFlags, static_cast<UINT>(wParam)),
             GetControlKeyState(0),

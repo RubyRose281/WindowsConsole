@@ -48,7 +48,7 @@ void ConhostInternalGetSet::PrintString(const std::wstring_view string)
                                            string.data(),
                                            &dwNumBytes,
                                            nullptr,
-                                           _io.GetActiveOutputBuffer().GetTextBuffer().GetCursor().GetPosition().X,
+                                           _io.GetActiveOutputBuffer().GetTextBuffer().GetCursor().GetPosition().narrow_x<short>(),
                                            WC_LIMIT_BACKSPACE | WC_DELAY_EOL_WRAP,
                                            nullptr);
     cursor.EndDeferDrawing();

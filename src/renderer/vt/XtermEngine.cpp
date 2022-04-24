@@ -73,12 +73,12 @@ XtermEngine::XtermEngine(_In_ wil::unique_hfile hPipe,
         RETURN_IF_FAILED(GetDirtyArea(dirty));
 
         // If we have 0 or 1 dirty pieces in the area, set as appropriate.
-        Viewport dirtyView = dirty.empty() ? Viewport::Empty() : Viewport::FromInclusive(til::at(dirty, 0).to_small_rect());
+        Viewport dirtyView = dirty.empty() ? Viewport::Empty() : Viewport::FromExclusive(til::at(dirty, 0));
 
         // If there's more than 1, union them all up with the 1 we already have.
         for (size_t i = 1; i < dirty.size(); ++i)
         {
-            dirtyView = Viewport::Union(dirtyView, Viewport::FromInclusive(til::at(dirty, i).to_small_rect()));
+            dirtyView = Viewport::Union(dirtyView, Viewport::FromExclusive(til::at(dirty, i)));
         }
     }
 
@@ -385,8 +385,8 @@ try
         // statement here.
 
         // Move the cursor to the bottom of the current viewport
-        const short bottom = _lastViewport.BottomInclusive();
-        RETURN_IF_FAILED(_MoveCursor({ 0, bottom }));
+        const auto bottom = _lastViewport.BottomInclusive();
+        RETURN_IF_FAILED(_MoveCursor(til::unwrap_coord({ 0, bottom })));
         // Emit some number of newlines to create space in the buffer.
         RETURN_IF_FAILED(_Write(std::string(absDy, '\n')));
     }

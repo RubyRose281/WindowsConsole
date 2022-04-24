@@ -202,7 +202,7 @@ CATCH_RETURN();
     {
         // We're explicitly replacing characters outside ASCII with a ? because
         //      that's what telnet wants.
-        needed.push_back((wch > L'\x7f') ? '?' : static_cast<char>(wch));
+        needed.push_back(wch > L'\x7f' ? '?' : static_cast<char>(wch));
     }
 
     return _Write(needed);
@@ -251,7 +251,7 @@ CATCH_RETURN();
 
     _lastViewport = newView;
 
-    if ((oldView.Height() != newView.Height()) || (oldView.Width() != newView.Width()))
+    if (oldView.Height() != newView.Height() || oldView.Width() != newView.Width())
     {
         // Don't emit a resize event if we've requested it be suppressed
         if (!_suppressResizeRepaint)

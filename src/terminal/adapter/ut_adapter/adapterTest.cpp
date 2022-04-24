@@ -282,11 +282,11 @@ public:
             break;
         case CursorX::RIGHT:
             Log::Comment(L"Cursor set to right edge of buffer.");
-            cursorPos.X = bufferSize.X - 1;
+            cursorPos.X = bufferSize.width - 1;
             break;
         case CursorX::XCENTER:
             Log::Comment(L"Cursor set to centered X of buffer.");
-            cursorPos.X = bufferSize.X / 2;
+            cursorPos.X = bufferSize.width / 2;
             break;
         }
 
@@ -306,7 +306,7 @@ public:
             break;
         }
 
-        _textBuffer->GetCursor().SetPosition(til::unwrap_coord(cursorPos));
+        _textBuffer->GetCursor().SetPosition(cursorPos);
         _expectedCursorPos = cursorPos;
     }
 
@@ -575,7 +575,7 @@ public:
             _testGetSet->_expectedCursorPos.Y = _testGetSet->_viewport.Bottom - 1;
             break;
         case CursorDirection::RIGHT:
-            _testGetSet->_expectedCursorPos.X = _testGetSet->_textBuffer->GetSize().Dimensions().X - 1;
+            _testGetSet->_expectedCursorPos.X = _testGetSet->_textBuffer->GetSize().Dimensions().width - 1;
             break;
         case CursorDirection::LEFT:
             _testGetSet->_expectedCursorPos.X = 0;
@@ -624,10 +624,10 @@ public:
         Log::Comment(L"Test 3: Move beyond rectangle (down/right too far). Should be bounded back in.");
         _testGetSet->PrepData(CursorX::LEFT, CursorY::TOP);
 
-        sCol = (_testGetSet->_textBuffer->GetSize().Dimensions().X) * 2;
+        sCol = (_testGetSet->_textBuffer->GetSize().Dimensions().width) * 2;
         sRow = (_testGetSet->_viewport.Bottom - _testGetSet->_viewport.Top) * 2;
 
-        _testGetSet->_expectedCursorPos.X = _testGetSet->_textBuffer->GetSize().Dimensions().X - 1;
+        _testGetSet->_expectedCursorPos.X = _testGetSet->_textBuffer->GetSize().Dimensions().width - 1;
         _testGetSet->_expectedCursorPos.Y = _testGetSet->_viewport.Bottom - 1;
 
         VERIFY_IS_TRUE(_pDispatch->CursorPosition(sRow, sCol));
@@ -660,7 +660,7 @@ public:
         {
         case AbsolutePosition::CursorHorizontal:
             Log::Comment(L"Testing cursor horizontal movement.");
-            sRangeEnd = _testGetSet->_textBuffer->GetSize().Dimensions().X;
+            sRangeEnd = _testGetSet->_textBuffer->GetSize().Dimensions().width;
             sRangeStart = 0;
             psCursorExpected = &_testGetSet->_expectedCursorPos.X;
             moveFunc = &AdaptDispatch::CursorHorizontalPositionAbsolute;

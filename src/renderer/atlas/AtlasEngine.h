@@ -27,10 +27,10 @@ namespace Microsoft::Console::Render
         [[nodiscard]] HRESULT Present() noexcept override;
         [[nodiscard]] HRESULT PrepareForTeardown(_Out_ bool* pForcePaint) noexcept override;
         [[nodiscard]] HRESULT ScrollFrame() noexcept override;
-        [[nodiscard]] HRESULT Invalidate(const SMALL_RECT* psrRegion) noexcept override;
-        [[nodiscard]] HRESULT InvalidateCursor(const SMALL_RECT* psrRegion) noexcept override;
+        [[nodiscard]] HRESULT Invalidate(const til::rect* psrRegion) noexcept override;
+        [[nodiscard]] HRESULT InvalidateCursor(const til::rect* psrRegion) noexcept override;
         [[nodiscard]] HRESULT InvalidateSystem(const RECT* prcDirtyClient) noexcept override;
-        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept override;
+        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept override;
         [[nodiscard]] HRESULT InvalidateScroll(const COORD* pcoordDelta) noexcept override;
         [[nodiscard]] HRESULT InvalidateAll() noexcept override;
         [[nodiscard]] HRESULT InvalidateFlush(_In_ const bool circled, _Out_ bool* const pForcePaint) noexcept override;
@@ -42,7 +42,7 @@ namespace Microsoft::Console::Render
         [[nodiscard]] HRESULT PaintBackground() noexcept override;
         [[nodiscard]] HRESULT PaintBufferLine(gsl::span<const Cluster> clusters, COORD coord, bool fTrimLeft, bool lineWrapped) noexcept override;
         [[nodiscard]] HRESULT PaintBufferGridLines(GridLineSet lines, COLORREF color, size_t cchLine, COORD coordTarget) noexcept override;
-        [[nodiscard]] HRESULT PaintSelection(SMALL_RECT rect) noexcept override;
+        [[nodiscard]] HRESULT PaintSelection(const til::rect& rect) noexcept override;
         [[nodiscard]] HRESULT PaintCursor(const CursorOptions& options) noexcept override;
         [[nodiscard]] HRESULT UpdateDrawingBrushes(const TextAttribute& textAttributes, const RenderSettings& renderSettings, gsl::not_null<IRenderData*> pData, bool usingSoftFont, bool isSettingDefaultBrushes) noexcept override;
         [[nodiscard]] HRESULT UpdateFont(const FontInfoDesired& FontInfoDesired, _Out_ FontInfo& FontInfo) noexcept override;
@@ -612,7 +612,7 @@ namespace Microsoft::Console::Render
         IDWriteTextFormat* _getTextFormat(bool bold, bool italic) const noexcept;
         const Buffer<DWRITE_FONT_AXIS_VALUE>& _getTextFormatAxis(bool bold, bool italic) const noexcept;
         Cell* _getCell(u16 x, u16 y) noexcept;
-        void _setCellFlags(SMALL_RECT coords, CellFlags mask, CellFlags bits) noexcept;
+        void _setCellFlags(u16r coords, CellFlags mask, CellFlags bits) noexcept;
         u16x2 _allocateAtlasTile() noexcept;
         void _flushBufferLine();
         void _emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, size_t bufferPos2);

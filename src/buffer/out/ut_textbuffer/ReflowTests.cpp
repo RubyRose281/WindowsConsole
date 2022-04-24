@@ -36,9 +36,9 @@ namespace
 
     struct TestBuffer
     {
-        COORD size;
+        til::size size;
         std::vector<TestRow> rows;
-        COORD cursor;
+        til::point cursor;
     };
 
     struct TestCase
@@ -841,7 +841,7 @@ class ReflowTests
         for (size_t bufferIndex{ 1 }; bufferIndex < testCase.buffers.size(); ++bufferIndex)
         {
             const auto& testBuffer{ til::at(testCase.buffers, bufferIndex) };
-            Log::Comment(NoThrowString().Format(L"[%zu.%zu] Resizing to %dx%d", i, bufferIndex, testBuffer.size.X, testBuffer.size.Y));
+            Log::Comment(NoThrowString().Format(L"[%zu.%zu] Resizing to %dx%d", i, bufferIndex, testBuffer.size.width, testBuffer.size.height));
 
             auto newBuffer{ _textBufferByReflowingTextBuffer(*textBuffer, testBuffer.size) };
 

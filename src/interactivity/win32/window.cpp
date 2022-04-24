@@ -624,8 +624,8 @@ void Window::_UpdateWindowSize(const SIZE sizeNew)
 
         // Now do the multiplication of characters times pixels per char. This is the client area pixel size.
         SIZE WindowSize;
-        WindowSize.cx = WindowDimensions.X * ScreenFontSize.X;
-        WindowSize.cy = WindowDimensions.Y * ScreenFontSize.Y;
+        WindowSize.cx = WindowDimensions.width * ScreenFontSize.X;
+        WindowSize.cy = WindowDimensions.height * ScreenFontSize.Y;
 
         // Fill a rectangle to call the system to adjust the client rect into a window rect
         RECT rectSizeTemp = { 0 };
@@ -638,7 +638,7 @@ void Window::_UpdateWindowSize(const SIZE sizeNew)
         WindowSize.cx = RECT_WIDTH(&rectSizeTemp);
         WindowSize.cy = RECT_HEIGHT(&rectSizeTemp);
 
-        if (WindowDimensions.Y != 0)
+        if (WindowDimensions.height != 0)
         {
             // We want the alt to have scroll bars if the main has scroll bars.
             // The bars are disabled, but they're still there.
@@ -727,7 +727,7 @@ void Window::_UpdateWindowSize(const SIZE sizeNew)
 void Window::VerticalScroll(const WORD wScrollCommand, const WORD wAbsoluteChange)
 {
     CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    COORD NewOrigin;
+    til::point NewOrigin;
     SCREEN_INFORMATION& ScreenInfo = GetScreenInfo();
 
     // Log a telemetry event saying the user interacted with the Console
@@ -737,7 +737,7 @@ void Window::VerticalScroll(const WORD wScrollCommand, const WORD wAbsoluteChang
 
     NewOrigin = viewport.Origin();
 
-    const SHORT sScreenBufferSizeY = ScreenInfo.GetBufferSize().Height();
+    const auto sScreenBufferSizeY = ScreenInfo.GetBufferSize().Height();
 
     switch (wScrollCommand)
     {
@@ -797,7 +797,7 @@ void Window::VerticalScroll(const WORD wScrollCommand, const WORD wAbsoluteChang
     }
     }
 
-    NewOrigin.Y = std::clamp(NewOrigin.Y, 0i16, gsl::narrow<SHORT>(sScreenBufferSizeY - viewport.Height()));
+    NewOrigin.Y = std::clamp(NewOrigin.Y, 0, sScreenBufferSizeY - viewport.Height());
     LOG_IF_FAILED(ScreenInfo.SetViewportOrigin(true, NewOrigin, false));
 }
 
@@ -814,9 +814,9 @@ void Window::HorizontalScroll(const WORD wScrollCommand, const WORD wAbsoluteCha
     Telemetry::Instance().SetUserInteractive();
 
     SCREEN_INFORMATION& ScreenInfo = GetScreenInfo();
-    const SHORT sScreenBufferSizeX = ScreenInfo.GetBufferSize().Width();
+    const auto sScreenBufferSizeX = ScreenInfo.GetBufferSize().Width();
     const auto& viewport = ScreenInfo.GetViewport();
-    COORD NewOrigin = viewport.Origin();
+    auto NewOrigin = viewport.Origin();
 
     switch (wScrollCommand)
     {
@@ -868,7 +868,7 @@ void Window::HorizontalScroll(const WORD wScrollCommand, const WORD wAbsoluteCha
         return;
     }
     }
-    NewOrigin.X = std::clamp(NewOrigin.X, 0i16, gsl::narrow<SHORT>(sScreenBufferSizeX - viewport.Width()));
+    NewOrigin.X = std::clamp(NewOrigin.X, 0, sScreenBufferSizeX - viewport.Width());
     LOG_IF_FAILED(ScreenInfo.SetViewportOrigin(true, NewOrigin, false));
 }
 
@@ -922,7 +922,7 @@ void Window::_CalculateWindowRect(const COORD coordWindowInChars, _Inout_ RECT* 
     const SCREEN_INFORMATION& siAttached = GetScreenInfo();
     const COORD coordFontSize = siAttached.GetScreenFontSize();
     const HWND hWnd = GetWindowHandle();
-    const COORD coordBufferSize = siAttached.GetBufferSize().Dimensions();
+    const auto coordBufferSize = siAttached.GetBufferSize().Dimensions();
     const int iDpi = g.dpi;
 
     s_CalculateWindowRect(coordWindowInChars, iDpi, coordFontSize, coordBufferSize, hWnd, prectWindow);
@@ -1275,7 +1275,7 @@ void Window::s_ReinitializeFontsForDPIChange()
         // Save window size
         auto windowRect = pWindow->GetWindowRect();
         const auto windowDimensions = gci.GetActiveOutputBuffer().GetViewport().Dimensions();
-        DWORD dwValue = MAKELONG(windowDimensions.X, windowDimensions.Y);
+        DWORD dwValue = MAKELONG(windowDimensions.width, windowDimensions.height);
         Status = RegistrySerialization::s_UpdateValue(hConsoleKey,
                                                       hTitleKey,
                                                       CONSOLE_REGISTRY_WINDOWSIZE,
@@ -1284,9 +1284,9 @@ void Window::s_ReinitializeFontsForDPIChange()
                                                       static_cast<DWORD>(sizeof(dwValue)));
         if (NT_SUCCESS(Status))
         {
-            const COORD coordScreenBufferSize = gci.GetActiveOutputBuffer().GetBufferSize().Dimensions();
-            auto screenBufferWidth = coordScreenBufferSize.X;
-            auto screenBufferHeight = coordScreenBufferSize.Y;
+            const auto coordScreenBufferSize = gci.GetActiveOutputBuffer().GetBufferSize().Dimensions();
+            auto screenBufferWidth = coordScreenBufferSize.width;
+            auto screenBufferHeight = coordScreenBufferSize.height;
             dwValue = MAKELONG(screenBufferWidth, screenBufferHeight);
             Status = RegistrySerialization::s_UpdateValue(hConsoleKey,
                                                           hTitleKey,

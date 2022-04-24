@@ -35,7 +35,7 @@ COORD RenderData::GetTextBufferEndPosition() const noexcept
 {
     const CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     Viewport bufferSize = gci.GetActiveOutputBuffer().GetBufferSize();
-    COORD endPosition{ bufferSize.Width() - 1, bufferSize.BottomInclusive() };
+    til::point endPosition{ bufferSize.Width() - 1, bufferSize.BottomInclusive() };
     return endPosition;
 }
 

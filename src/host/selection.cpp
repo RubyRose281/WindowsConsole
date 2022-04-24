@@ -199,7 +199,9 @@ void Selection::ExtendSelection(_In_ COORD coordBufferPos)
     // ensure position is within buffer bounds. Not less than 0 and not greater than the screen buffer size.
     try
     {
-        screenInfo.GetTerminalBufferSize().Clamp(coordBufferPos);
+        auto c = til::wrap_coord(coordBufferPos);
+        screenInfo.GetTerminalBufferSize().Clamp(c);
+        coordBufferPos = c;
     }
     CATCH_LOG_RETURN();
 
@@ -545,7 +547,7 @@ void Selection::SelectAll()
         {
             // Temporary workaround until MSFT: 614579 is completed.
             const auto bufferSize = screenInfo.GetBufferSize();
-            COORD coordOneAfterEnd = coordInputEnd;
+            auto coordOneAfterEnd = til::wrap_coord(coordInputEnd);
             bufferSize.IncrementInBounds(coordOneAfterEnd);
 
             if (s_IsWithinBoundaries(screenInfo.GetTextBuffer().GetCursor().GetPosition(), coordInputStart, coordInputEnd))
@@ -603,7 +605,7 @@ void Selection::SelectAll()
     if (!IsLineSelection())
     {
         coordNewSelStart.X = 0;
-        coordNewSelEnd.X = screenInfo.GetBufferSize().RightInclusive();
+        coordNewSelEnd.X = gsl::narrow<short>(screenInfo.GetBufferSize().RightInclusive());
     }
 
     SelectNewRegion(coordNewSelStart, coordNewSelEnd);

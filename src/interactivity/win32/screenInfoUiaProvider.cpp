@@ -92,7 +92,7 @@ HWND ScreenInfoUiaProvider::GetWindowHandle() const
     return _pUiaParent->GetWindowHandle();
 }
 
-void ScreenInfoUiaProvider::ChangeViewport(const SMALL_RECT NewWindow)
+void ScreenInfoUiaProvider::ChangeViewport(const til::inclusive_rect& NewWindow)
 {
     _pUiaParent->ChangeViewport(NewWindow);
 }
@@ -105,7 +105,7 @@ HRESULT ScreenInfoUiaProvider::GetSelectionRange(_In_ IRawElementProviderSimple*
     const auto start = _pData->GetSelectionAnchor();
 
     // we need to make end exclusive
-    auto end = _pData->GetSelectionEnd();
+    auto end = til::wrap_coord(_pData->GetSelectionEnd());
     _pData->GetTextBuffer().GetSize().IncrementInBounds(end, true);
 
     // TODO GH #4509: Box Selection is misrepresented here as a line selection.
@@ -139,8 +139,8 @@ HRESULT ScreenInfoUiaProvider::CreateTextRange(_In_ IRawElementProviderSimple* c
 }
 
 HRESULT ScreenInfoUiaProvider::CreateTextRange(_In_ IRawElementProviderSimple* const pProvider,
-                                               const COORD start,
-                                               const COORD end,
+                                               const til::point start,
+                                               const til::point end,
                                                const std::wstring_view wordDelimiters,
                                                _COM_Outptr_result_maybenull_ UiaTextRangeBase** ppUtr)
 {

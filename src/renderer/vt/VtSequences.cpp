@@ -277,7 +277,7 @@ using namespace Microsoft::Console::Render;
 // - sHeight: number of rows the terminal should display
 // Return Value:
 // - S_OK if we succeeded, else an appropriate HRESULT for failing to allocate or write.
-[[nodiscard]] HRESULT VtEngine::_ResizeWindow(const short sWidth, const short sHeight) noexcept
+[[nodiscard]] HRESULT VtEngine::_ResizeWindow(const til::CoordType sWidth, const til::CoordType sHeight) noexcept
 {
     if (sWidth < 0 || sHeight < 0)
     {

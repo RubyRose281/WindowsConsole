@@ -65,7 +65,7 @@ class ScreenBufferTests
     TEST_METHOD_SETUP(MethodSetup)
     {
         // Set up some sane defaults
-        CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+        auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
         gci.SetColorTableEntry(TextColor::DEFAULT_FOREGROUND, INVALID_COLOR);
         gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, INVALID_COLOR);
         gci.SetFillAttribute(0x07); // DARK_WHITE on DARK_BLACK
@@ -79,7 +79,7 @@ class ScreenBufferTests
         // Make sure the viewport always starts off at the default size.
         auto defaultSize = COORD{ CommonState::s_csWindowWidth, CommonState::s_csWindowHeight };
         currentBuffer.SetViewport(Viewport::FromDimensions(defaultSize), true);
-        VERIFY_ARE_EQUAL(COORD({ 0, 0 }), currentBuffer.GetTextBuffer().GetCursor().GetPosition());
+        VERIFY_ARE_EQUAL(til::point{}, currentBuffer.GetTextBuffer().GetCursor().GetPosition());
 
         return true;
     }
@@ -238,7 +238,7 @@ class ScreenBufferTests
 
 void ScreenBufferTests::SingleAlternateBufferCreationTest()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
@@ -247,7 +247,7 @@ void ScreenBufferTests::SingleAlternateBufferCreationTest()
     VERIFY_IS_NULL(psiOriginal->_psiAlternateBuffer);
     VERIFY_IS_NULL(psiOriginal->_psiMainBuffer);
 
-    NTSTATUS Status = psiOriginal->UseAlternateScreenBuffer();
+    auto Status = psiOriginal->UseAlternateScreenBuffer();
     if (VERIFY_IS_TRUE(NT_SUCCESS(Status)))
     {
         Log::Comment(L"First alternate buffer successfully created");
@@ -270,7 +270,7 @@ void ScreenBufferTests::SingleAlternateBufferCreationTest()
 
 void ScreenBufferTests::MultipleAlternateBufferCreationTest()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
@@ -280,7 +280,7 @@ void ScreenBufferTests::MultipleAlternateBufferCreationTest()
         L"main buffer.");
 
     SCREEN_INFORMATION* const psiOriginal = &gci.GetActiveOutputBuffer();
-    NTSTATUS Status = psiOriginal->UseAlternateScreenBuffer();
+    auto Status = psiOriginal->UseAlternateScreenBuffer();
     if (VERIFY_IS_TRUE(NT_SUCCESS(Status)))
     {
         Log::Comment(L"First alternate buffer successfully created");
@@ -317,7 +317,7 @@ void ScreenBufferTests::MultipleAlternateBufferCreationTest()
 
 void ScreenBufferTests::MultipleAlternateBuffersFromMainCreationTest()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
@@ -325,7 +325,7 @@ void ScreenBufferTests::MultipleAlternateBuffersFromMainCreationTest()
         L"Testing creating one alternate buffer, then creating another"
         L" alternate from the main, before returning to the main buffer.");
     SCREEN_INFORMATION* const psiOriginal = &gci.GetActiveOutputBuffer();
-    NTSTATUS Status = psiOriginal->UseAlternateScreenBuffer();
+    auto Status = psiOriginal->UseAlternateScreenBuffer();
     if (VERIFY_IS_TRUE(NT_SUCCESS(Status)))
     {
         Log::Comment(L"First alternate buffer successfully created");
@@ -423,8 +423,8 @@ void ScreenBufferTests::AlternateBufferCursorInheritanceTest()
 
 void ScreenBufferTests::TestReverseLineFeed()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& screenInfo = gci.GetActiveOutputBuffer();
     auto& stateMachine = screenInfo.GetStateMachine();
     auto& cursor = screenInfo._textBuffer->GetCursor();
     auto viewport = screenInfo.GetViewport();
@@ -521,9 +521,9 @@ void _SetTabStops(SCREEN_INFORMATION& screenInfo, std::list<short> columns, bool
     }
 }
 
-std::list<short> _GetTabStops(SCREEN_INFORMATION& screenInfo)
+std::list<til::CoordType> _GetTabStops(SCREEN_INFORMATION& screenInfo)
 {
-    std::list<short> columns;
+    std::list<til::CoordType> columns;
 
     const auto lastColumn = screenInfo.GetBufferSize().RightInclusive();
     auto& stateMachine = screenInfo.GetStateMachine();
@@ -554,8 +554,8 @@ void ScreenBufferTests::TestResetClearTabStops()
     m_state->PrepareGlobalScreenBuffer();
     m_state->PrepareNewTextBufferInfo();
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& screenInfo = gci.GetActiveOutputBuffer();
     auto& stateMachine = screenInfo.GetStateMachine();
 
     const auto clearTabStops = L"\033[3g";
@@ -578,8 +578,8 @@ void ScreenBufferTests::TestResetClearTabStops()
 
 void ScreenBufferTests::TestAddTabStop()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& screenInfo = gci.GetActiveOutputBuffer();
     auto& stateMachine = screenInfo.GetStateMachine();
     auto& cursor = screenInfo.GetTextBuffer().GetCursor();
 
@@ -624,8 +624,8 @@ void ScreenBufferTests::TestAddTabStop()
 
 void ScreenBufferTests::TestClearTabStop()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& screenInfo = gci.GetActiveOutputBuffer();
     auto& stateMachine = screenInfo.GetStateMachine();
     auto& cursor = screenInfo.GetTextBuffer().GetCursor();
 
@@ -734,8 +734,8 @@ void ScreenBufferTests::TestClearTabStop()
 
 void ScreenBufferTests::TestGetForwardTab()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer();
     auto& stateMachine = si.GetStateMachine();
     auto& cursor = si.GetTextBuffer().GetCursor();
 
@@ -744,17 +744,17 @@ void ScreenBufferTests::TestGetForwardTab()
     std::list<short> inputData = { 3, 5, 6, 10, 15, 17 };
     _SetTabStops(si, inputData, true);
 
-    const COORD coordScreenBufferSize = si.GetBufferSize().Dimensions();
+    const auto coordScreenBufferSize = si.GetBufferSize().Dimensions();
 
     Log::Comment(L"Find next tab from before front.");
     {
         cursor.SetXPosition(0);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
         coordCursorExpected.X = inputData.front();
 
         stateMachine.ProcessString(nextForwardTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor advanced to first tab stop from sample list.");
@@ -764,11 +764,11 @@ void ScreenBufferTests::TestGetForwardTab()
     {
         cursor.SetXPosition(6);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
         coordCursorExpected.X = *std::next(inputData.begin(), 3);
 
         stateMachine.ProcessString(nextForwardTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor advanced to middle tab stop from sample list.");
@@ -778,11 +778,11 @@ void ScreenBufferTests::TestGetForwardTab()
     {
         cursor.SetXPosition(30);
 
-        COORD coordCursorExpected = cursor.GetPosition();
-        coordCursorExpected.X = coordScreenBufferSize.X - 1;
+        auto coordCursorExpected = cursor.GetPosition();
+        coordCursorExpected.X = coordScreenBufferSize.width - 1;
 
         stateMachine.ProcessString(nextForwardTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor advanced to end of screen buffer.");
@@ -790,12 +790,12 @@ void ScreenBufferTests::TestGetForwardTab()
 
     Log::Comment(L"Find next tab from rightmost column.");
     {
-        cursor.SetXPosition(coordScreenBufferSize.X - 1);
+        cursor.SetXPosition(coordScreenBufferSize.width - 1);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
 
         stateMachine.ProcessString(nextForwardTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor remains in rightmost column.");
@@ -804,8 +804,8 @@ void ScreenBufferTests::TestGetForwardTab()
 
 void ScreenBufferTests::TestGetReverseTab()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer();
     auto& stateMachine = si.GetStateMachine();
     auto& cursor = si.GetTextBuffer().GetCursor();
 
@@ -818,11 +818,11 @@ void ScreenBufferTests::TestGetReverseTab()
     {
         cursor.SetXPosition(1);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
         coordCursorExpected.X = 0;
 
         stateMachine.ProcessString(nextReverseTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor adjusted to beginning of the buffer when it started before sample list.");
@@ -832,11 +832,11 @@ void ScreenBufferTests::TestGetReverseTab()
     {
         cursor.SetXPosition(6);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
         coordCursorExpected.X = *std::next(inputData.begin());
 
         stateMachine.ProcessString(nextReverseTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor adjusted back one tab spot from middle of sample list.");
@@ -846,11 +846,11 @@ void ScreenBufferTests::TestGetReverseTab()
     {
         cursor.SetXPosition(30);
 
-        COORD coordCursorExpected = cursor.GetPosition();
+        auto coordCursorExpected = cursor.GetPosition();
         coordCursorExpected.X = inputData.back();
 
         stateMachine.ProcessString(nextReverseTab);
-        COORD const coordCursorResult = cursor.GetPosition();
+        auto coordCursorResult = cursor.GetPosition();
         VERIFY_ARE_EQUAL(coordCursorExpected,
                          coordCursorResult,
                          L"Cursor adjusted to last item in the sample list from position beyond end.");
@@ -859,11 +859,11 @@ void ScreenBufferTests::TestGetReverseTab()
 
 void ScreenBufferTests::TestAltBufferTabStops()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to swap buffers.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer();
+    auto& mainBuffer = gci.GetActiveOutputBuffer();
     // Make sure we're in VT mode
     WI_SetFlag(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
@@ -874,7 +874,7 @@ void ScreenBufferTests::TestAltBufferTabStops()
     VERIFY_ARE_EQUAL(expectedStops, _GetTabStops(mainBuffer));
 
     VERIFY_SUCCEEDED(mainBuffer.UseAlternateScreenBuffer());
-    SCREEN_INFORMATION& altBuffer = gci.GetActiveOutputBuffer();
+    auto& altBuffer = gci.GetActiveOutputBuffer();
     auto useMain = wil::scope_exit([&] { altBuffer.UseMainScreenBuffer(); });
 
     Log::Comment(NoThrowString().Format(
@@ -900,8 +900,8 @@ void ScreenBufferTests::TestAltBufferTabStops()
 
 void ScreenBufferTests::EraseAllTests()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer();
     auto& stateMachine = si.GetStateMachine();
     auto& cursor = si._textBuffer->GetCursor();
 
@@ -913,7 +913,7 @@ void ScreenBufferTests::EraseAllTests()
     Log::Comment(L"Case 1: Erase a single line of text in the buffer\n");
 
     stateMachine.ProcessString(L"foo");
-    COORD originalRelativePosition = { 3, 0 };
+    til::point originalRelativePosition = { 3, 0 };
     VERIFY_ARE_EQUAL(si.GetViewport().Top(), 0);
     VERIFY_ARE_EQUAL(cursor.GetPosition(), originalRelativePosition);
 
@@ -921,7 +921,7 @@ void ScreenBufferTests::EraseAllTests()
 
     auto viewport = si._viewport;
     VERIFY_ARE_EQUAL(viewport.Top(), 1);
-    COORD newRelativePos = originalRelativePosition;
+    auto newRelativePos = originalRelativePosition;
     viewport.ConvertFromOrigin(&newRelativePos);
     VERIFY_ARE_EQUAL(cursor.GetPosition(), newRelativePos);
     Log::Comment(NoThrowString().Format(
@@ -1039,11 +1039,11 @@ void ScreenBufferTests::VtResize()
         TEST_METHOD_PROPERTY(L"IsolationLevel", L"Method")
     END_TEST_METHOD_PROPERTIES()
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = tbi.GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = tbi.GetCursor();
     WI_SetFlag(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
     cursor.SetXPosition(0);
@@ -1172,11 +1172,11 @@ void ScreenBufferTests::VtResizeComprehensive()
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"dx", dx), L"change in width of buffer");
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"dy", dy), L"change in height of buffer");
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = tbi.GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = tbi.GetCursor();
     WI_SetFlag(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
     cursor.SetXPosition(0);
@@ -1282,7 +1282,7 @@ void ScreenBufferTests::VtResizeDECCOLM()
     newViewWidth = si.GetViewport().Width();
 
     VERIFY_IS_FALSE(areMarginsSet());
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), getRelativeCursorPosition());
+    VERIFY_ARE_EQUAL(til::point{}, getRelativeCursorPosition());
     VERIFY_ARE_EQUAL(initialSbHeight, newSbHeight);
     VERIFY_ARE_EQUAL(initialViewHeight, newViewHeight);
     VERIFY_ARE_EQUAL(132, newSbWidth);
@@ -1336,7 +1336,7 @@ void ScreenBufferTests::VtResizeDECCOLM()
     newViewWidth = si.GetViewport().Width();
 
     VERIFY_IS_FALSE(areMarginsSet());
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), getRelativeCursorPosition());
+    VERIFY_ARE_EQUAL(til::point{}, getRelativeCursorPosition());
     VERIFY_ARE_EQUAL(initialSbHeight, newSbHeight);
     VERIFY_ARE_EQUAL(initialViewHeight, newViewHeight);
     VERIFY_ARE_EQUAL(80, newSbWidth);
@@ -1345,38 +1345,38 @@ void ScreenBufferTests::VtResizeDECCOLM()
 
 void ScreenBufferTests::VtSoftResetCursorPosition()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    const Cursor& cursor = tbi.GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    const auto& cursor = tbi.GetCursor();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(NoThrowString().Format(
         L"Move the cursor to 2,2, then execute a soft reset.\n"
         L"The cursor should not move."));
 
     stateMachine.ProcessString(L"\x1b[2;2H");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
 
     stateMachine.ProcessString(L"\x1b[!p");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
 
     Log::Comment(NoThrowString().Format(
         L"Set some margins. The cursor should move home."));
 
     stateMachine.ProcessString(L"\x1b[2;10r");
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
 
     Log::Comment(NoThrowString().Format(
         L"Move the cursor to 2,2, then execute a soft reset.\n"
         L"The cursor should not move, even though there are margins."));
     stateMachine.ProcessString(L"\x1b[2;2H");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
     stateMachine.ProcessString(L"\x1b[!p");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
 
     Log::Comment(
         L"Set the origin mode, some margins, and move the cursor to 2,2.\n"
@@ -1384,7 +1384,7 @@ void ScreenBufferTests::VtSoftResetCursorPosition()
     stateMachine.ProcessString(L"\x1b[?6h");
     stateMachine.ProcessString(L"\x1b[5;10r");
     stateMachine.ProcessString(L"\x1b[2;2H");
-    VERIFY_ARE_EQUAL(COORD({ 1, 5 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 5), cursor.GetPosition());
 
     Log::Comment(
         L"Execute a soft reset, reapply the margins, and move the cursor to 2,2.\n"
@@ -1392,24 +1392,24 @@ void ScreenBufferTests::VtSoftResetCursorPosition()
     stateMachine.ProcessString(L"\x1b[!p");
     stateMachine.ProcessString(L"\x1b[5;10r");
     stateMachine.ProcessString(L"\x1b[2;2H");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
 }
 
 void ScreenBufferTests::VtScrollMarginsNewlineColor()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
-    cursor.SetPosition(COORD({ 0, 0 }));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
+    cursor.SetPosition(til::point{});
 
-    const COLORREF yellow = RGB(255, 255, 0);
-    const COLORREF magenta = RGB(255, 0, 255);
+    const auto yellow = RGB(255, 255, 0);
+    const auto magenta = RGB(255, 0, 255);
     gci.SetColorTableEntry(TextColor::DEFAULT_FOREGROUND, yellow);
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
     gci.CalculateDefaultColorIndices();
@@ -1435,7 +1435,7 @@ void ScreenBufferTests::VtScrollMarginsNewlineColor()
         stateMachine.ProcessString(L"X");
         stateMachine.ProcessString(L"\n");
 
-        const COORD cursorPos = cursor.GetPosition();
+        const auto cursorPos = cursor.GetPosition();
 
         Log::Comment(NoThrowString().Format(
             L"Cursor=%s",
@@ -1448,7 +1448,7 @@ void ScreenBufferTests::VtScrollMarginsNewlineColor()
         for (int y = viewTop; y < viewTop + 10; y++)
         {
             SetVerifyOutput settings(VerifyOutputSettings::LogOnlyFailures);
-            const ROW& row = tbi.GetRowByOffset(y);
+            const auto& row = tbi.GetRowByOffset(y);
             const auto attrRow = &row.GetAttrRow();
             const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
             for (int x = 0; x < viewport.RightInclusive(); x++)
@@ -1464,19 +1464,19 @@ void ScreenBufferTests::VtScrollMarginsNewlineColor()
 
 void ScreenBufferTests::VtNewlinePastViewport()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
 
     // Make sure we're in VT mode
     WI_SetFlag(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
-    cursor.SetPosition(COORD({ 0, 0 }));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
+    cursor.SetPosition(til::point{});
 
     stateMachine.ProcessString(L"\x1b[m");
     stateMachine.ProcessString(L"\x1b[2J");
@@ -1491,7 +1491,7 @@ void ScreenBufferTests::VtNewlinePastViewport()
         L"initialViewport=%s",
         VerifyOutputTraits<SMALL_RECT>::ToString(initialViewport.ToInclusive()).GetBuffer()));
 
-    cursor.SetPosition(COORD({ 0, initialViewport.BottomInclusive() }));
+    cursor.SetPosition(til::point{ 0, initialViewport.BottomInclusive() });
 
     // Set the attributes that will be used to initialize new rows.
     auto fillAttr = TextAttribute{ RGB(12, 34, 56), RGB(78, 90, 12) };
@@ -1516,7 +1516,7 @@ void ScreenBufferTests::VtNewlinePastViewport()
     for (int y = viewport.Top(); y < viewport.BottomInclusive(); y++)
     {
         SetVerifyOutput settings(VerifyOutputSettings::LogOnlyFailures);
-        const ROW& row = tbi.GetRowByOffset(y);
+        const auto& row = tbi.GetRowByOffset(y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         for (int x = 0; x < viewport.RightInclusive(); x++)
@@ -1526,7 +1526,7 @@ void ScreenBufferTests::VtNewlinePastViewport()
         }
     }
 
-    const ROW& row = tbi.GetRowByOffset(viewport.BottomInclusive());
+    const auto& row = tbi.GetRowByOffset(viewport.BottomInclusive());
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     for (int x = 0; x < viewport.RightInclusive(); x++)
@@ -1538,19 +1538,19 @@ void ScreenBufferTests::VtNewlinePastViewport()
 
 void ScreenBufferTests::VtNewlinePastEndOfBuffer()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
 
     // Make sure we're in VT mode
     WI_SetFlag(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
-    cursor.SetPosition(COORD({ 0, 0 }));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
+    cursor.SetPosition(til::point{});
 
     stateMachine.ProcessString(L"\x1b[m");
     stateMachine.ProcessString(L"\x1b[2J");
@@ -1568,7 +1568,7 @@ void ScreenBufferTests::VtNewlinePastEndOfBuffer()
         L"initialViewport=%s",
         VerifyOutputTraits<SMALL_RECT>::ToString(initialViewport.ToInclusive()).GetBuffer()));
 
-    cursor.SetPosition(COORD({ 0, initialViewport.BottomInclusive() }));
+    cursor.SetPosition(til::point{ 0, initialViewport.BottomInclusive() });
 
     // Set the attributes that will be used to initialize new rows.
     auto fillAttr = TextAttribute{ RGB(12, 34, 56), RGB(78, 90, 12) };
@@ -1593,7 +1593,7 @@ void ScreenBufferTests::VtNewlinePastEndOfBuffer()
     for (int y = viewport.Top(); y < viewport.BottomInclusive(); y++)
     {
         SetVerifyOutput settings(VerifyOutputSettings::LogOnlyFailures);
-        const ROW& row = tbi.GetRowByOffset(y);
+        const auto& row = tbi.GetRowByOffset(y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         for (int x = 0; x < viewport.RightInclusive(); x++)
@@ -1603,7 +1603,7 @@ void ScreenBufferTests::VtNewlinePastEndOfBuffer()
         }
     }
 
-    const ROW& row = tbi.GetRowByOffset(viewport.BottomInclusive());
+    const auto& row = tbi.GetRowByOffset(viewport.BottomInclusive());
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     for (int x = 0; x < viewport.RightInclusive(); x++)
@@ -1628,11 +1628,11 @@ void ScreenBufferTests::VtNewlineOutsideMargins()
     Log::Comment(L"LF at bottom of viewport scrolls the viewport");
     cursor.SetPosition({ 0, viewportBottom });
     stateMachine.ProcessString(L"\n");
-    VERIFY_ARE_EQUAL(COORD({ 0, viewportBottom + 1 }), cursor.GetPosition());
-    VERIFY_ARE_EQUAL(COORD({ 0, viewportTop + 1 }), si.GetViewport().Origin());
+    VERIFY_ARE_EQUAL(til::point(0, viewportBottom + 1), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, viewportTop + 1), si.GetViewport().Origin());
 
     Log::Comment(L"Reset viewport and apply DECSTBM margins");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, viewportTop }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{ 0, viewportTop }, true));
     stateMachine.ProcessString(L"\x1b[1;5r");
     // Make sure we clear the margins on exit so they can't break other tests.
     auto clearMargins = wil::scope_exit([&] { stateMachine.ProcessString(L"\x1b[r"); });
@@ -1640,15 +1640,15 @@ void ScreenBufferTests::VtNewlineOutsideMargins()
     Log::Comment(L"LF no longer scrolls the viewport when below bottom margin");
     cursor.SetPosition({ 0, viewportBottom });
     stateMachine.ProcessString(L"\n");
-    VERIFY_ARE_EQUAL(COORD({ 0, viewportBottom }), cursor.GetPosition());
-    VERIFY_ARE_EQUAL(COORD({ 0, viewportTop }), si.GetViewport().Origin());
+    VERIFY_ARE_EQUAL(til::point(0, viewportBottom), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, viewportTop), si.GetViewport().Origin());
 }
 
 void ScreenBufferTests::VtSetColorTable()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& stateMachine = si.GetStateMachine();
 
     // Start with a known value
     gci.SetColorTableEntry(0, RGB(0, 0, 0));
@@ -1730,12 +1730,12 @@ void ScreenBufferTests::VtSetColorTable()
 void ScreenBufferTests::ResizeTraditionalDoesNotDoubleFreeAttrRows()
 {
     // there is not much to verify here, this test passes if the console doesn't crash.
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
 
     gci.SetWrapText(false);
-    COORD newBufferSize = si.GetBufferSize().Dimensions();
-    newBufferSize.Y--;
+    auto newBufferSize = si.GetBufferSize().Dimensions();
+    newBufferSize.height--;
 
     VERIFY_SUCCEEDED(si.ResizeTraditional(newBufferSize));
 }
@@ -1757,26 +1757,26 @@ void ScreenBufferTests::ResizeCursorUnchanged()
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"dx", dx), L"change in width of buffer");
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"dy", dy), L"change in height of buffer");
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
     const auto& initialCursor = si.GetTextBuffer().GetCursor();
 
     // Get initial cursor values
-    const CursorType initialType = initialCursor.GetType();
+    const auto initialType = initialCursor.GetType();
     const auto initialSize = initialCursor.GetSize();
 
     // set our wrap mode accordingly - ResizeScreenBuffer will be smart enough
     //  to call the appropriate implementation
     gci.SetWrapText(useResizeWithReflow);
 
-    COORD newBufferSize = si.GetBufferSize().Dimensions();
-    newBufferSize.X += static_cast<short>(dx);
-    newBufferSize.Y += static_cast<short>(dy);
+    auto newBufferSize = si.GetBufferSize().Dimensions();
+    newBufferSize.width += dx;
+    newBufferSize.height += dy;
 
     VERIFY_SUCCEEDED(si.ResizeScreenBuffer(newBufferSize, false));
 
     const auto& finalCursor = si.GetTextBuffer().GetCursor();
-    const CursorType finalType = finalCursor.GetType();
+    const auto finalType = finalCursor.GetType();
     const auto finalSize = finalCursor.GetSize();
 
     VERIFY_ARE_EQUAL(initialType, finalType);
@@ -1785,18 +1785,18 @@ void ScreenBufferTests::ResizeCursorUnchanged()
 
 void ScreenBufferTests::ResizeAltBuffer()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& stateMachine = si.GetStateMachine();
 
     Log::Comment(NoThrowString().Format(
         L"Try resizing the alt buffer. Make sure the call doesn't stack overflow."));
 
     VERIFY_IS_FALSE(si._IsAltBuffer());
-    const Viewport originalMainSize = Viewport(si._viewport);
+    const auto originalMainSize = Viewport(si._viewport);
 
     Log::Comment(NoThrowString().Format(
         L"Switch to alt buffer"));
@@ -1806,7 +1806,7 @@ void ScreenBufferTests::ResizeAltBuffer()
     VERIFY_IS_NOT_NULL(si._psiAlternateBuffer);
     SCREEN_INFORMATION* const psiAlt = si._psiAlternateBuffer;
 
-    COORD newSize = originalMainSize.Dimensions();
+    auto newSize = til::unwrap_coord_size(originalMainSize.Dimensions());
     newSize.X += 2;
     newSize.Y += 2;
 
@@ -1840,15 +1840,15 @@ void ScreenBufferTests::ResizeAltBufferGetScreenBufferInfo()
         L"buffer's size, not the main buffer's size."));
 
     auto& g = ServiceLocator::LocateGlobals();
-    CONSOLE_INFORMATION& gci = g.getConsoleInformation();
+    auto& gci = g.getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    StateMachine& stateMachine = mainBuffer.GetStateMachine();
+    auto& mainBuffer = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& stateMachine = mainBuffer.GetStateMachine();
 
     VERIFY_IS_FALSE(mainBuffer._IsAltBuffer());
-    const Viewport originalMainSize = Viewport(mainBuffer._viewport);
+    const auto originalMainSize = Viewport(mainBuffer._viewport);
 
     Log::Comment(NoThrowString().Format(
         L"Switch to alt buffer"));
@@ -1860,11 +1860,11 @@ void ScreenBufferTests::ResizeAltBufferGetScreenBufferInfo()
     auto& altBuffer = *(mainBuffer._psiAlternateBuffer);
     auto useMain = wil::scope_exit([&] { altBuffer.UseMainScreenBuffer(); });
 
-    COORD newBufferSize = originalMainSize.Dimensions();
-    newBufferSize.X += static_cast<short>(dx);
-    newBufferSize.Y += static_cast<short>(dy);
+    auto newBufferSize = til::unwrap_coord_size(originalMainSize.Dimensions());
+    newBufferSize.X += dx;
+    newBufferSize.Y += dy;
 
-    const Viewport originalAltSize = Viewport(altBuffer._viewport);
+    const auto originalAltSize = Viewport(altBuffer._viewport);
 
     VERIFY_ARE_EQUAL(originalMainSize.Width(), originalAltSize.Width());
     VERIFY_ARE_EQUAL(originalMainSize.Height(), originalAltSize.Height());
@@ -1890,22 +1890,22 @@ void ScreenBufferTests::ResizeAltBufferGetScreenBufferInfo()
 
 void ScreenBufferTests::VtEraseAllPersistCursor()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    const Cursor& cursor = tbi.GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    const auto& cursor = tbi.GetCursor();
 
     Log::Comment(NoThrowString().Format(
         L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(NoThrowString().Format(
         L"Move the cursor to 2,2, then execute a Erase All.\n"
         L"The cursor should not move relative to the viewport."));
 
     stateMachine.ProcessString(L"\x1b[2;2H");
-    VERIFY_ARE_EQUAL(COORD({ 1, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(1, 1), cursor.GetPosition());
 
     stateMachine.ProcessString(L"\x1b[2J");
 
@@ -1918,14 +1918,14 @@ void ScreenBufferTests::VtEraseAllPersistCursor()
 
 void ScreenBufferTests::VtEraseAllPersistCursorFillColor()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
 
     Log::Comment(NoThrowString().Format(
         L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(NoThrowString().Format(
         L"Change the colors to dark_red on bright_blue, then execute a Erase All.\n"
@@ -1965,8 +1965,8 @@ void ScreenBufferTests::VtEraseAllPersistCursorFillColor()
 
 void ScreenBufferTests::GetWordBoundary()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
 
     const auto text = L"This is some test text for word boundaries.";
     const auto length = wcslen(text);
@@ -2041,8 +2041,8 @@ void ScreenBufferTests::GetWordBoundary()
 
 void ScreenBufferTests::GetWordBoundaryTrimZeros(const bool on)
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
 
     const auto text = L"000fe12 0xfe12 0Xfe12 0nfe12 0Nfe12";
     const auto length = wcslen(text);
@@ -2108,7 +2108,7 @@ void ScreenBufferTests::GetWordBoundaryTrimZerosOff()
 
 void ScreenBufferTests::TestAltBufferCursorState()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
@@ -2117,7 +2117,7 @@ void ScreenBufferTests::TestAltBufferCursorState()
     VERIFY_IS_NULL(original._psiAlternateBuffer);
     VERIFY_IS_NULL(original._psiMainBuffer);
 
-    NTSTATUS Status = original.UseAlternateScreenBuffer();
+    auto Status = original.UseAlternateScreenBuffer();
     if (VERIFY_IS_TRUE(NT_SUCCESS(Status)))
     {
         Log::Comment(L"Alternate buffer successfully created");
@@ -2148,7 +2148,7 @@ void ScreenBufferTests::TestAltBufferCursorState()
 
 void ScreenBufferTests::TestAltBufferVtDispatching()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
     Log::Comment(L"Creating one alternate buffer");
@@ -2162,7 +2162,7 @@ void ScreenBufferTests::TestAltBufferVtDispatching()
     VERIFY_IS_NULL(mainBuffer._psiAlternateBuffer);
     VERIFY_IS_NULL(mainBuffer._psiMainBuffer);
 
-    NTSTATUS Status = mainBuffer.UseAlternateScreenBuffer();
+    auto Status = mainBuffer.UseAlternateScreenBuffer();
     if (VERIFY_IS_TRUE(NT_SUCCESS(Status)))
     {
         Log::Comment(L"Alternate buffer successfully created");
@@ -2200,15 +2200,15 @@ void ScreenBufferTests::TestAltBufferVtDispatching()
 
         std::unique_ptr<WriteData> waiter;
         std::wstring seq = L"\x1b[5;6H";
-        size_t seqCb = 2 * seq.size();
+        auto seqCb = 2 * seq.size();
         VERIFY_SUCCEEDED(DoWriteConsole(&seq[0], &seqCb, mainBuffer, false, waiter));
 
-        VERIFY_ARE_EQUAL(COORD({ 0, 0 }), mainCursor.GetPosition());
+        VERIFY_ARE_EQUAL(til::point{}, mainCursor.GetPosition());
         // recall: vt coordinates are (row, column), 1-indexed
-        VERIFY_ARE_EQUAL(COORD({ 5, 4 }), altCursor.GetPosition());
+        VERIFY_ARE_EQUAL(til::point(5, 4), altCursor.GetPosition());
 
         const TextAttribute expectedDefaults = {};
-        TextAttribute expectedRgb = expectedDefaults;
+        auto expectedRgb = expectedDefaults;
         expectedRgb.SetBackground(RGB(255, 0, 255));
 
         VERIFY_ARE_EQUAL(expectedDefaults, mainBuffer.GetAttributes());
@@ -2225,12 +2225,12 @@ void ScreenBufferTests::TestAltBufferVtDispatching()
         seqCb = 2 * seq.size();
         VERIFY_SUCCEEDED(DoWriteConsole(&seq[0], &seqCb, mainBuffer, false, waiter));
 
-        VERIFY_ARE_EQUAL(COORD({ 0, 0 }), mainCursor.GetPosition());
-        VERIFY_ARE_EQUAL(COORD({ 6, 4 }), altCursor.GetPosition());
+        VERIFY_ARE_EQUAL(til::point{}, mainCursor.GetPosition());
+        VERIFY_ARE_EQUAL(til::point(6, 4), altCursor.GetPosition());
 
         // Recall we didn't print an 'X' to the main buffer, so there's no
         //      char to inspect the attributes of.
-        const ROW& altRow = alternate.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
+        const auto& altRow = alternate.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
         const auto altAttrRow = &altRow.GetAttrRow();
         const std::vector<TextAttribute> altAttrs{ altAttrRow->begin(), altAttrRow->end() };
         const auto altAttrA = altAttrs[altCursor.GetPosition().X - 1];
@@ -2240,12 +2240,12 @@ void ScreenBufferTests::TestAltBufferVtDispatching()
 
 void ScreenBufferTests::TestAltBufferRIS()
 {
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
+    auto& si = gci.GetActiveOutputBuffer();
+    auto& stateMachine = si.GetStateMachine();
 
     Log::Comment(L"Initially in main buffer");
     VERIFY_IS_FALSE(gci.GetActiveOutputBuffer()._IsAltBuffer());
@@ -2263,21 +2263,21 @@ void ScreenBufferTests::SetDefaultsIndividuallyBothDefault()
 {
     // Tests MSFT:19828103
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
-    COLORREF yellow = RGB(255, 255, 0);
-    COLORREF brightGreen = gci.GetColorTableEntry(TextColor::BRIGHT_GREEN);
-    COLORREF darkBlue = gci.GetColorTableEntry(TextColor::DARK_BLUE);
+    auto magenta = RGB(255, 0, 255);
+    auto yellow = RGB(255, 255, 0);
+    auto brightGreen = gci.GetColorTableEntry(TextColor::BRIGHT_GREEN);
+    auto darkBlue = gci.GetColorTableEntry(TextColor::DARK_BLUE);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_FOREGROUND, yellow);
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
@@ -2315,17 +2315,17 @@ void ScreenBufferTests::SetDefaultsIndividuallyBothDefault()
     TextAttribute expectedTwo;
     expectedTwo.SetIndexedForeground(TextColor::BRIGHT_GREEN);
     expectedTwo.SetIndexedBackground(TextColor::DARK_BLUE);
-    TextAttribute expectedThree = expectedTwo;
+    auto expectedThree = expectedTwo;
     expectedThree.SetDefaultForeground();
     // Four is the same as Defaults
     // Five is the same as two
-    TextAttribute expectedSix = expectedTwo;
+    auto expectedSix = expectedTwo;
     expectedSix.SetDefaultBackground();
 
     COORD expectedCursor{ 6, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, cursor.GetPosition());
 
-    const ROW& row = tbi.GetRowByOffset(0);
+    const auto& row = tbi.GetRowByOffset(0);
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     const auto attrA = attrs[0];
@@ -2368,20 +2368,20 @@ void ScreenBufferTests::SetDefaultsTogether()
 {
     // Tests MSFT:19828103
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
-    COLORREF yellow = RGB(255, 255, 0);
-    COLORREF color250 = gci.GetColorTableEntry(250);
+    auto magenta = RGB(255, 0, 255);
+    auto yellow = RGB(255, 255, 0);
+    auto color250 = gci.GetColorTableEntry(250);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_FOREGROUND, yellow);
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
@@ -2416,7 +2416,7 @@ void ScreenBufferTests::SetDefaultsTogether()
     COORD expectedCursor{ 3, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, cursor.GetPosition());
 
-    const ROW& row = tbi.GetRowByOffset(0);
+    const auto& row = tbi.GetRowByOffset(0);
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     const auto attrA = attrs[0];
@@ -2443,18 +2443,18 @@ void ScreenBufferTests::SetDefaultsTogether()
 void ScreenBufferTests::ReverseResetWithDefaultBackground()
 {
     // Tests MSFT:19694089
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
+    auto magenta = RGB(255, 0, 255);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_FOREGROUND, INVALID_COLOR);
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
@@ -2474,13 +2474,13 @@ void ScreenBufferTests::ReverseResetWithDefaultBackground()
 
     TextAttribute expectedDefaults{ gci.GetFillAttribute() };
     expectedDefaults.SetDefaultBackground();
-    TextAttribute expectedReversed = expectedDefaults;
+    auto expectedReversed = expectedDefaults;
     expectedReversed.Invert();
 
     COORD expectedCursor{ 3, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, cursor.GetPosition());
 
-    const ROW& row = tbi.GetRowByOffset(0);
+    const auto& row = tbi.GetRowByOffset(0);
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     const auto attrA = attrs[0];
@@ -2514,18 +2514,18 @@ void ScreenBufferTests::BackspaceDefaultAttrs()
     // That bug actually involves the input line, and that needs to use
     //      TextAttributes instead of WORDs
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
+    auto magenta = RGB(255, 0, 255);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
     gci.CalculateDefaultColorIndices();
@@ -2543,7 +2543,7 @@ void ScreenBufferTests::BackspaceDefaultAttrs()
     COORD expectedCursor{ 1, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, cursor.GetPosition());
 
-    const ROW& row = tbi.GetRowByOffset(0);
+    const auto& row = tbi.GetRowByOffset(0);
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     const auto attrA = attrs[0];
@@ -2579,18 +2579,18 @@ void ScreenBufferTests::BackspaceDefaultAttrsWriteCharsLegacy()
     // Kinda the same as above, but with WriteCharsLegacy instead.
     // The variable that really breaks this scenario
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
     auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
+    auto magenta = RGB(255, 0, 255);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
     gci.CalculateDefaultColorIndices();
@@ -2622,7 +2622,7 @@ void ScreenBufferTests::BackspaceDefaultAttrsWriteCharsLegacy()
     COORD expectedCursor{ 1, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, cursor.GetPosition());
 
-    const ROW& row = tbi.GetRowByOffset(0);
+    const auto& row = tbi.GetRowByOffset(0);
     const auto attrRow = &row.GetAttrRow();
     const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
     const auto attrA = attrs[0];
@@ -2646,21 +2646,21 @@ void ScreenBufferTests::BackspaceDefaultAttrsInPrompt()
     // Tests MSFT:19853701 - when you edit the prompt line at a bash prompt,
     //  make sure that the end of the line isn't filled with default/garbage attributes.
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    SCREEN_INFORMATION& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
-    const TextBuffer& tbi = si.GetTextBuffer();
-    StateMachine& stateMachine = si.GetStateMachine();
-    Cursor& cursor = si.GetTextBuffer().GetCursor();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
+    const auto& tbi = si.GetTextBuffer();
+    auto& stateMachine = si.GetStateMachine();
+    auto& cursor = si.GetTextBuffer().GetCursor();
 
     // Make sure we're in VT mode
     WI_SetFlag(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(si.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
     cursor.SetPosition({ 0, 0 });
 
-    COLORREF magenta = RGB(255, 0, 255);
+    auto magenta = RGB(255, 0, 255);
 
     gci.SetColorTableEntry(TextColor::DEFAULT_BACKGROUND, magenta);
     gci.CalculateDefaultColorIndices();
@@ -2676,7 +2676,7 @@ void ScreenBufferTests::BackspaceDefaultAttrsInPrompt()
     stateMachine.ProcessString(L"\x1b[2J");
 
     const auto viewport = si.GetViewport();
-    const ROW& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
+    const auto& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
     const auto attrRow = &row.GetAttrRow();
 
     {
@@ -2720,25 +2720,25 @@ void ScreenBufferTests::SetGlobalColorTable()
     //      global property. This behavior is consistent with other terminals
     //      tested.
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to swap buffers.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer();
+    auto& mainBuffer = gci.GetActiveOutputBuffer();
     VERIFY_IS_FALSE(mainBuffer._IsAltBuffer());
     WI_SetFlag(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    StateMachine& stateMachine = mainBuffer.GetStateMachine();
-    Cursor& mainCursor = mainBuffer.GetTextBuffer().GetCursor();
+    auto& stateMachine = mainBuffer.GetStateMachine();
+    auto& mainCursor = mainBuffer.GetTextBuffer().GetCursor();
     const auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(mainBuffer.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(mainBuffer.SetViewportOrigin(true, til::point{}, true));
     mainCursor.SetPosition({ 0, 0 });
 
-    const COLORREF originalRed = gci.GetColorTableEntry(TextColor::DARK_RED);
-    const COLORREF testColor = RGB(0x11, 0x22, 0x33);
+    const auto originalRed = gci.GetColorTableEntry(TextColor::DARK_RED);
+    const auto testColor = RGB(0x11, 0x22, 0x33);
     VERIFY_ARE_NOT_EQUAL(originalRed, testColor);
 
     stateMachine.ProcessString(L"\x1b[41m");
@@ -2746,7 +2746,7 @@ void ScreenBufferTests::SetGlobalColorTable()
     COORD expectedCursor{ 1, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, mainCursor.GetPosition());
     {
-        const ROW& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
+        const auto& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2757,13 +2757,13 @@ void ScreenBufferTests::SetGlobalColorTable()
     Log::Comment(NoThrowString().Format(L"Create an alt buffer"));
 
     VERIFY_SUCCEEDED(mainBuffer.UseAlternateScreenBuffer());
-    SCREEN_INFORMATION& altBuffer = gci.GetActiveOutputBuffer();
+    auto& altBuffer = gci.GetActiveOutputBuffer();
     auto useMain = wil::scope_exit([&] { altBuffer.UseMainScreenBuffer(); });
 
     WI_SetFlag(altBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(altBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    Cursor& altCursor = altBuffer.GetTextBuffer().GetCursor();
+    auto& altCursor = altBuffer.GetTextBuffer().GetCursor();
     altCursor.SetPosition({ 0, 0 });
 
     Log::Comment(NoThrowString().Format(
@@ -2772,7 +2772,7 @@ void ScreenBufferTests::SetGlobalColorTable()
     stateMachine.ProcessString(L"X");
     VERIFY_ARE_EQUAL(expectedCursor, altCursor.GetPosition());
     {
-        const ROW& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
+        const auto& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2785,9 +2785,9 @@ void ScreenBufferTests::SetGlobalColorTable()
     Log::Comment(NoThrowString().Format(
         L"Print another X, both should be the new \"red\" color"));
     stateMachine.ProcessString(L"X");
-    VERIFY_ARE_EQUAL(COORD({ 2, 0 }), altCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(2, 0), altCursor.GetPosition());
     {
-        const ROW& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
+        const auto& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2808,9 +2808,9 @@ void ScreenBufferTests::SetGlobalColorTable()
     Log::Comment(NoThrowString().Format(
         L"Print another X, both should be the new \"red\" color"));
     stateMachine.ProcessString(L"X");
-    VERIFY_ARE_EQUAL(COORD({ 2, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(2, 0), mainCursor.GetPosition());
     {
-        const ROW& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
+        const auto& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2827,25 +2827,25 @@ void ScreenBufferTests::SetColorTableThreeDigits()
     // Created for MSFT:19723934.
     // Changing the value of the color table above index 99 should work
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to swap buffers.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer();
+    auto& mainBuffer = gci.GetActiveOutputBuffer();
     VERIFY_IS_FALSE(mainBuffer._IsAltBuffer());
     WI_SetFlag(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    StateMachine& stateMachine = mainBuffer.GetStateMachine();
-    Cursor& mainCursor = mainBuffer.GetTextBuffer().GetCursor();
+    auto& stateMachine = mainBuffer.GetStateMachine();
+    auto& mainCursor = mainBuffer.GetTextBuffer().GetCursor();
     const auto& renderSettings = gci.GetRenderSettings();
 
     Log::Comment(NoThrowString().Format(L"Make sure the viewport is at 0,0"));
-    VERIFY_SUCCEEDED(mainBuffer.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(mainBuffer.SetViewportOrigin(true, til::point{}, true));
     mainCursor.SetPosition({ 0, 0 });
 
-    const COLORREF originalRed = gci.GetColorTableEntry(123);
-    const COLORREF testColor = RGB(0x11, 0x22, 0x33);
+    const auto originalRed = gci.GetColorTableEntry(123);
+    const auto testColor = RGB(0x11, 0x22, 0x33);
     VERIFY_ARE_NOT_EQUAL(originalRed, testColor);
 
     stateMachine.ProcessString(L"\x1b[48;5;123m");
@@ -2853,7 +2853,7 @@ void ScreenBufferTests::SetColorTableThreeDigits()
     COORD expectedCursor{ 1, 0 };
     VERIFY_ARE_EQUAL(expectedCursor, mainCursor.GetPosition());
     {
-        const ROW& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
+        const auto& row = mainBuffer.GetTextBuffer().GetRowByOffset(mainCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2864,13 +2864,13 @@ void ScreenBufferTests::SetColorTableThreeDigits()
     Log::Comment(NoThrowString().Format(L"Create an alt buffer"));
 
     VERIFY_SUCCEEDED(mainBuffer.UseAlternateScreenBuffer());
-    SCREEN_INFORMATION& altBuffer = gci.GetActiveOutputBuffer();
+    auto& altBuffer = gci.GetActiveOutputBuffer();
     auto useMain = wil::scope_exit([&] { altBuffer.UseMainScreenBuffer(); });
 
     WI_SetFlag(altBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(altBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    Cursor& altCursor = altBuffer.GetTextBuffer().GetCursor();
+    auto& altCursor = altBuffer.GetTextBuffer().GetCursor();
     altCursor.SetPosition({ 0, 0 });
 
     Log::Comment(NoThrowString().Format(
@@ -2879,7 +2879,7 @@ void ScreenBufferTests::SetColorTableThreeDigits()
     stateMachine.ProcessString(L"X");
     VERIFY_ARE_EQUAL(expectedCursor, altCursor.GetPosition());
     {
-        const ROW& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
+        const auto& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -2895,9 +2895,9 @@ void ScreenBufferTests::SetColorTableThreeDigits()
     // You shouldn't need to manually update the attributes again.
     stateMachine.ProcessString(L"\x1b[48;5;123m");
     stateMachine.ProcessString(L"X");
-    VERIFY_ARE_EQUAL(COORD({ 2, 0 }), altCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(2, 0), altCursor.GetPosition());
     {
-        const ROW& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
+        const auto& row = altBuffer.GetTextBuffer().GetRowByOffset(altCursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrB = attrs[1];
@@ -2911,20 +2911,20 @@ void ScreenBufferTests::SetDefaultForegroundColor()
 {
     // Setting the default foreground color should work
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to swap buffers.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer();
+    auto& mainBuffer = gci.GetActiveOutputBuffer();
     VERIFY_IS_FALSE(mainBuffer._IsAltBuffer());
     WI_SetFlag(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    StateMachine& stateMachine = mainBuffer.GetStateMachine();
+    auto& stateMachine = mainBuffer.GetStateMachine();
 
-    COLORREF originalColor = gci.GetColorTableEntry(TextColor::DEFAULT_FOREGROUND);
-    COLORREF newColor = gci.GetColorTableEntry(TextColor::DEFAULT_FOREGROUND);
-    COLORREF testColor = RGB(0x33, 0x66, 0x99);
+    auto originalColor = gci.GetColorTableEntry(TextColor::DEFAULT_FOREGROUND);
+    auto newColor = gci.GetColorTableEntry(TextColor::DEFAULT_FOREGROUND);
+    auto testColor = RGB(0x33, 0x66, 0x99);
     VERIFY_ARE_NOT_EQUAL(originalColor, testColor);
 
     Log::Comment(L"Valid Hexadecimal Notation");
@@ -2956,20 +2956,20 @@ void ScreenBufferTests::SetDefaultBackgroundColor()
 {
     // Setting the default Background color should work
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to swap buffers.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
-    SCREEN_INFORMATION& mainBuffer = gci.GetActiveOutputBuffer();
+    auto& mainBuffer = gci.GetActiveOutputBuffer();
     VERIFY_IS_FALSE(mainBuffer._IsAltBuffer());
     WI_SetFlag(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     VERIFY_IS_TRUE(WI_IsFlagSet(mainBuffer.OutputMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING));
 
-    StateMachine& stateMachine = mainBuffer.GetStateMachine();
+    auto& stateMachine = mainBuffer.GetStateMachine();
 
-    COLORREF originalColor = gci.GetColorTableEntry(TextColor::DEFAULT_BACKGROUND);
-    COLORREF newColor = gci.GetColorTableEntry(TextColor::DEFAULT_BACKGROUND);
-    COLORREF testColor = RGB(0x33, 0x66, 0x99);
+    auto originalColor = gci.GetColorTableEntry(TextColor::DEFAULT_BACKGROUND);
+    auto newColor = gci.GetColorTableEntry(TextColor::DEFAULT_BACKGROUND);
+    auto testColor = RGB(0x33, 0x66, 0x99);
     VERIFY_ARE_NOT_EQUAL(originalColor, testColor);
 
     Log::Comment(L"Valid Hexadecimal Notation");
@@ -3054,7 +3054,7 @@ void ScreenBufferTests::DeleteCharsNearEndOfLine()
     auto& mainCursor = tbi.GetCursor();
     auto& mainView = mainBuffer.GetViewport();
 
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, mainCursor.GetPosition());
     VERIFY_ARE_EQUAL(mainBuffer.GetBufferSize().Width(), mainView.Width());
     VERIFY_IS_GREATER_THAN(mainView.Width(), (dx + numCharsToDelete));
 
@@ -3063,7 +3063,7 @@ void ScreenBufferTests::DeleteCharsNearEndOfLine()
         stateMachine.ProcessString(L"X");
     }
 
-    VERIFY_ARE_EQUAL(COORD({ mainView.Width() - 1, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(mainView.Width() - 1, 0), mainCursor.GetPosition());
 
     Log::Comment(NoThrowString().Format(
         L"row_i=[%s]",
@@ -3077,7 +3077,7 @@ void ScreenBufferTests::DeleteCharsNearEndOfLine()
     Log::Comment(NoThrowString().Format(
         L"row_f=[%s]",
         tbi.GetRowByOffset(0).GetText().c_str()));
-    VERIFY_ARE_EQUAL(COORD({ mainView.Width() - static_cast<short>(dx), 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(mainView.Width() - static_cast<short>(dx), 0), mainCursor.GetPosition());
     auto iter = tbi.GetCellDataAt({ 0, 0 });
     auto expectedNumSpaces = std::min(dx, numCharsToDelete);
     for (int x = 0; x < mainView.Width() - expectedNumSpaces; x++)
@@ -3123,13 +3123,13 @@ void ScreenBufferTests::DeleteCharsNearEndOfLineSimpleFirstCase()
     auto& mainView = mainBuffer.GetViewport();
     auto& mainCursor = tbi.GetCursor();
 
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, mainCursor.GetPosition());
     VERIFY_ARE_EQUAL(newBufferWidth, mainView.Width());
     VERIFY_ARE_EQUAL(mainBuffer.GetBufferSize().Width(), mainView.Width());
 
     stateMachine.ProcessString(L"ABCDEFG");
 
-    VERIFY_ARE_EQUAL(COORD({ 7, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(7, 0), mainCursor.GetPosition());
     // Place the cursor on the 'D'
     mainCursor.SetPosition({ 3, 0 });
 
@@ -3142,7 +3142,7 @@ void ScreenBufferTests::DeleteCharsNearEndOfLineSimpleFirstCase()
     Log::Comment(NoThrowString().Format(L"after =[%s]", tbi.GetRowByOffset(0).GetText().c_str()));
 
     // Cursor shouldn't have moved
-    VERIFY_ARE_EQUAL(COORD({ 3, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(3, 0), mainCursor.GetPosition());
 
     auto iter = tbi.GetCellDataAt({ 0, 0 });
     VERIFY_ARE_EQUAL(L"A", iter->Chars());
@@ -3183,13 +3183,13 @@ void ScreenBufferTests::DeleteCharsNearEndOfLineSimpleSecondCase()
     auto& mainView = mainBuffer.GetViewport();
     auto& mainCursor = tbi.GetCursor();
 
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, mainCursor.GetPosition());
     VERIFY_ARE_EQUAL(newBufferWidth, mainView.Width());
     VERIFY_ARE_EQUAL(mainBuffer.GetBufferSize().Width(), mainView.Width());
 
     stateMachine.ProcessString(L"ABCDEFG");
 
-    VERIFY_ARE_EQUAL(COORD({ 7, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(7, 0), mainCursor.GetPosition());
 
     // Place the cursor on the 'C'
     mainCursor.SetPosition({ 2, 0 });
@@ -3203,7 +3203,7 @@ void ScreenBufferTests::DeleteCharsNearEndOfLineSimpleSecondCase()
 
     Log::Comment(NoThrowString().Format(L"after =[%s]", tbi.GetRowByOffset(0).GetText().c_str()));
 
-    VERIFY_ARE_EQUAL(COORD({ 2, 0 }), mainCursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(2, 0), mainCursor.GetPosition());
 
     auto iter = tbi.GetCellDataAt({ 0, 0 });
     VERIFY_ARE_EQUAL(L"A", iter->Chars());
@@ -3258,7 +3258,7 @@ void ScreenBufferTests::DontResetColorsAboveVirtualBottom()
         L"viewport=%s", VerifyOutputTraits<SMALL_RECT>::ToString(si.GetViewport().ToInclusive()).GetBuffer()));
     VERIFY_ARE_EQUAL(2, cursor.GetPosition().X);
     {
-        const ROW& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
+        const auto& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -3289,7 +3289,7 @@ void ScreenBufferTests::DontResetColorsAboveVirtualBottom()
 
     VERIFY_ARE_EQUAL(3, cursor.GetPosition().X);
     {
-        const ROW& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
+        const auto& row = tbi.GetRowByOffset(cursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         const std::vector<TextAttribute> attrs{ attrRow->begin(), attrRow->end() };
         const auto attrA = attrs[0];
@@ -3331,7 +3331,7 @@ void _FillLines(int startLine, int endLine, T fillContent, TextAttribute fillAtt
 }
 
 template<class... T>
-bool _ValidateLineContains(COORD position, T&&... expectedContent)
+bool _ValidateLineContains(til::point position, T&&... expectedContent)
 {
     auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     auto& si = gci.GetActiveOutputBuffer().GetActiveBuffer();
@@ -3881,9 +3881,9 @@ void ScreenBufferTests::EraseScrollbackTests()
     si.SetAttributes(TextAttribute{ FOREGROUND_GREEN | BACKGROUND_RED });
 
     // Place the cursor in the center.
-    const short centerX = bufferWidth / 2;
-    const short centerY = (si.GetViewport().Top() + si.GetViewport().BottomExclusive()) / 2;
-    const auto cursorPos = COORD{ centerX, centerY };
+    const auto centerX = bufferWidth / 2;
+    const auto centerY = (si.GetViewport().Top() + si.GetViewport().BottomExclusive()) / 2;
+    const auto cursorPos = til::point{ centerX, centerY };
 
     Log::Comment(L"Set the cursor position and erase the scrollback.");
     VERIFY_SUCCEEDED(si.SetCursorPosition(cursorPos, true));
@@ -3891,9 +3891,9 @@ void ScreenBufferTests::EraseScrollbackTests()
 
     // The viewport should move to the top of the buffer, while the cursor
     // maintains the same relative position.
-    const auto expectedOffset = COORD{ 0, -viewport.Top() };
+    const auto expectedOffset = til::point{ 0, -viewport.Top() };
     const auto expectedViewport = Viewport::Offset(viewport, expectedOffset);
-    const auto expectedCursorPos = COORD{ cursorPos.X, cursorPos.Y + expectedOffset.Y };
+    const auto expectedCursorPos = til::point{ cursorPos.X, cursorPos.Y + expectedOffset.Y };
 
     Log::Comment(L"Verify expected viewport.");
     VERIFY_ARE_EQUAL(expectedViewport, si.GetViewport());
@@ -3986,8 +3986,8 @@ void ScreenBufferTests::EraseTests()
     expectedFillAttr.SetStandardErase();
 
     // Place the cursor in the center.
-    const short centerX = bufferWidth / 2;
-    const short centerY = (si.GetViewport().Top() + si.GetViewport().BottomExclusive()) / 2;
+    const auto centerX = bufferWidth / 2;
+    const auto centerY = (si.GetViewport().Top() + si.GetViewport().BottomExclusive()) / 2;
 
     Log::Comment(L"Set the cursor position and perform the operation.");
     VERIFY_SUCCEEDED(si.SetCursorPosition({ centerX, centerY }, true));
@@ -4021,8 +4021,8 @@ void ScreenBufferTests::EraseTests()
     auto suffixPos = cursorPos;
     // When erasing from the beginning, the cursor column is included in the range.
     suffixPos.X += (eraseType == DispatchTypes::EraseType::FromBeginning);
-    size_t prefixWidth = suffixPos.X;
-    size_t suffixWidth = bufferWidth - prefixWidth;
+    auto prefixWidth = suffixPos.X;
+    auto suffixWidth = bufferWidth - prefixWidth;
     if (eraseType == DispatchTypes::EraseType::ToEnd)
     {
         Log::Comment(L"The start of the cursor line should remain unchanged.");
@@ -4487,14 +4487,14 @@ void ScreenBufferTests::LineFeedEscapeSequences()
     // We'll place the cursor in the center of the line.
     // If we are performing a line feed with carriage return,
     // the cursor should move to the leftmost column.
-    const short initialX = view.Width() / 2;
-    const short expectedX = withReturn ? 0 : initialX;
+    const auto initialX = view.Width() / 2;
+    const auto expectedX = withReturn ? 0 : initialX;
 
     {
         Log::Comment(L"Starting at the top of viewport");
-        const short initialY = 0;
-        const short expectedY = initialY + 1;
-        const short expectedViewportTop = si.GetViewport().Top();
+        const auto initialY = 0;
+        const auto expectedY = initialY + 1;
+        const auto expectedViewportTop = si.GetViewport().Top();
         cursor.SetPosition(COORD{ initialX, initialY });
         stateMachine.ProcessString(escapeSequence);
 
@@ -4505,9 +4505,9 @@ void ScreenBufferTests::LineFeedEscapeSequences()
 
     {
         Log::Comment(L"Starting at the bottom of viewport");
-        const short initialY = si.GetViewport().BottomInclusive();
-        const short expectedY = initialY + 1;
-        const short expectedViewportTop = si.GetViewport().Top() + 1;
+        const auto initialY = si.GetViewport().BottomInclusive();
+        const auto expectedY = initialY + 1;
+        const auto expectedViewportTop = si.GetViewport().Top() + 1;
         cursor.SetPosition(COORD{ initialX, initialY });
         stateMachine.ProcessString(escapeSequence);
 
@@ -4523,9 +4523,9 @@ void ScreenBufferTests::LineFeedEscapeSequences()
         // Make sure we clear the margins on exit so they can't break other tests.
         auto clearMargins = wil::scope_exit([&] { stateMachine.ProcessString(L"\x1b[r"); });
 
-        const short initialY = si.GetViewport().Top() + 9;
-        const short expectedY = initialY;
-        const short expectedViewportTop = si.GetViewport().Top();
+        const auto initialY = si.GetViewport().Top() + 9;
+        const auto expectedY = initialY;
+        const auto expectedViewportTop = si.GetViewport().Top();
         _FillLine(initialY, L'Q', {});
         cursor.SetPosition(COORD{ initialX, initialY });
         stateMachine.ProcessString(escapeSequence);
@@ -4548,15 +4548,15 @@ void ScreenBufferTests::ScrollLines256Colors()
 
     // colorStyle will be used to control whether we use a color from the 16
     // color table, a color from the 256 color table, or a pure RGB color.
-    const int Use16Color = 0;
-    const int Use256Color = 1;
-    const int UseRGBColor = 2;
+    const auto Use16Color = 0;
+    const auto Use256Color = 1;
+    const auto UseRGBColor = 2;
 
     // scrollType will be used to control whether we use InsertLines,
     // DeleteLines, or ReverseIndex to scroll the contents of the buffer.
-    const int InsertLines = 0;
-    const int DeleteLines = 1;
-    const int ReverseLineFeed = 2;
+    const auto InsertLines = 0;
+    const auto DeleteLines = 1;
+    const auto ReverseLineFeed = 2;
 
     int scrollType;
     int colorStyle;
@@ -4696,55 +4696,55 @@ void ScreenBufferTests::SetOriginMode()
     Log::Comment(L"By default, setting a margin moves the cursor to the top-left of the screen.");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[6;20r");
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     Log::Comment(L"Cursor addressing is relative to the top-left of the screen.");
     stateMachine.ProcessString(L"\x1B[13;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 12 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 12), cursor.GetPosition());
     Log::Comment(L"The cursor can be moved below the bottom margin.");
     stateMachine.ProcessString(L"\x1B[23;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 22 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 22), cursor.GetPosition());
 
     // Testing the effects of DECOM being set (relative cursor addressing)
     Log::Comment(L"Setting DECOM moves the cursor to the top-left of the margin area.");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[?6h");
-    VERIFY_ARE_EQUAL(COORD({ 0, 5 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 5), cursor.GetPosition());
     Log::Comment(L"Setting a margin moves the cursor to the top-left of the margin area.");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[6;20r");
-    VERIFY_ARE_EQUAL(COORD({ 0, 5 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 5), cursor.GetPosition());
     Log::Comment(L"Cursor addressing is relative to the top-left of the margin area.");
     stateMachine.ProcessString(L"\x1B[8;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 12 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 12), cursor.GetPosition());
     Log::Comment(L"The cursor cannot be moved below the bottom margin.");
     stateMachine.ProcessString(L"\x1B[100;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 19 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 19), cursor.GetPosition());
 
     // Testing the effects of DECOM being reset (absolute cursor addressing)
     Log::Comment(L"Resetting DECOM moves the cursor to the top-left of the screen.");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[?6l");
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     Log::Comment(L"Setting a margin moves the cursor to the top-left of the screen.");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[6;20r");
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     Log::Comment(L"Cursor addressing is relative to the top-left of the screen.");
     stateMachine.ProcessString(L"\x1B[13;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 12 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 12), cursor.GetPosition());
     Log::Comment(L"The cursor can be moved below the bottom margin.");
     stateMachine.ProcessString(L"\x1B[23;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 22 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 22), cursor.GetPosition());
 
     // Testing the effects of DECOM being set with no margins
     Log::Comment(L"With no margins, setting DECOM moves the cursor to the top-left of the screen.");
     stateMachine.ProcessString(L"\x1B[r");
     cursor.SetPosition({ 40, 12 });
     stateMachine.ProcessString(L"\x1B[?6h");
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     Log::Comment(L"Cursor addressing is still relative to the top-left of the screen.");
     stateMachine.ProcessString(L"\x1B[13;41H");
-    VERIFY_ARE_EQUAL(COORD({ 40, 12 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(40, 12), cursor.GetPosition());
 
     // Reset DECOM so we don't affect future tests
     stateMachine.ProcessString(L"\x1B[?6l");
@@ -4764,13 +4764,13 @@ void ScreenBufferTests::SetAutoWrapMode()
 
     Log::Comment(L"By default, output should wrap onto the next line.");
     // Output 6 characters, 3 spaces from the end of the line.
-    short startLine = 0;
+    auto startLine = 0;
     cursor.SetPosition({ 80 - 3, startLine });
     stateMachine.ProcessString(L"abcdef");
     // Half of the content should wrap onto the next line.
     VERIFY_IS_TRUE(_ValidateLineContains({ 80 - 3, startLine }, L"abc", attributes));
     VERIFY_IS_TRUE(_ValidateLineContains({ 0, startLine + 1 }, L"def", attributes));
-    VERIFY_ARE_EQUAL(COORD({ 3, startLine + 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(3, startLine + 1), cursor.GetPosition());
 
     Log::Comment(L"When DECAWM is reset, output is clamped to the line width.");
     stateMachine.ProcessString(L"\x1b[?7l");
@@ -4780,7 +4780,7 @@ void ScreenBufferTests::SetAutoWrapMode()
     stateMachine.ProcessString(L"abcdef");
     // Content should be clamped to the line width, overwriting the last char.
     VERIFY_IS_TRUE(_ValidateLineContains({ 80 - 3, startLine }, L"abf", attributes));
-    VERIFY_ARE_EQUAL(COORD({ 79, startLine }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(79, startLine), cursor.GetPosition());
 
     Log::Comment(L"When DECAWM is set, output is wrapped again.");
     stateMachine.ProcessString(L"\x1b[?7h");
@@ -4791,7 +4791,7 @@ void ScreenBufferTests::SetAutoWrapMode()
     // Half of the content should wrap onto the next line.
     VERIFY_IS_TRUE(_ValidateLineContains({ 80 - 3, startLine }, L"abc", attributes));
     VERIFY_IS_TRUE(_ValidateLineContains({ 0, startLine + 1 }, L"def", attributes));
-    VERIFY_ARE_EQUAL(COORD({ 3, startLine + 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(3, startLine + 1), cursor.GetPosition());
 }
 
 void ScreenBufferTests::HardResetBuffer()
@@ -4832,12 +4832,12 @@ void ScreenBufferTests::HardResetBuffer()
     Log::Comment(L"Write a single line of text to the buffer");
     stateMachine.ProcessString(L"Hello World!\n");
     VERIFY_IS_FALSE(isBufferClear());
-    VERIFY_ARE_EQUAL(COORD({ 0, 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 1), cursor.GetPosition());
 
     Log::Comment(L"After a reset, buffer should be clear, with cursor at 0,0");
     stateMachine.ProcessString(resetToInitialState);
     VERIFY_IS_TRUE(isBufferClear());
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
 
     Log::Comment(L"Set the background color to red");
     stateMachine.ProcessString(L"\x1b[41m");
@@ -4853,8 +4853,8 @@ void ScreenBufferTests::HardResetBuffer()
     Log::Comment(L"After a reset, buffer should be clear, with viewport and cursor at 0,0");
     stateMachine.ProcessString(resetToInitialState);
     VERIFY_IS_TRUE(isBufferClear());
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), viewport.Origin());
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, viewport.Origin());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     VERIFY_ARE_EQUAL(TextAttribute{}, si.GetAttributes());
 }
 
@@ -4863,13 +4863,13 @@ void ScreenBufferTests::RestoreDownAltBufferWithTerminalScrolling()
     // This is a test for microsoft/terminal#1206. Refer to that issue for more
     // context
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.SetTerminalScrolling(true);
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
     auto& siMain = gci.GetActiveOutputBuffer();
-    COORD const coordFontSize = siMain.GetScreenFontSize();
+    auto coordFontSize = siMain.GetScreenFontSize();
     siMain._virtualBottom = siMain._viewport.BottomInclusive();
 
     auto originalView = siMain._viewport;
@@ -4887,19 +4887,19 @@ void ScreenBufferTests::RestoreDownAltBufferWithTerminalScrolling()
 
         auto useMain = wil::scope_exit([&] { altBuffer.UseMainScreenBuffer(); });
 
-        const COORD originalSize = originalView.Dimensions();
-        const COORD doubledSize = { originalSize.X * 2, originalSize.Y * 2 };
+        const auto originalSize = originalView.Dimensions();
+        const til::size doubledSize { originalSize.width * 2, originalSize.height * 2 };
 
         // Create some RECTs, which are dimensions in pixels, because
         // ProcessResizeWindow needs to work on rects in screen _pixel_
         // dimensions, not character sizes.
         RECT originalClientRect{ 0 }, maximizedClientRect{ 0 };
 
-        originalClientRect.right = originalSize.X * coordFontSize.X;
-        originalClientRect.bottom = originalSize.Y * coordFontSize.Y;
+        originalClientRect.right = originalSize.width * coordFontSize.X;
+        originalClientRect.bottom = originalSize.height * coordFontSize.Y;
 
-        maximizedClientRect.right = doubledSize.X * coordFontSize.X;
-        maximizedClientRect.bottom = doubledSize.Y * coordFontSize.Y;
+        maximizedClientRect.right = doubledSize.width * coordFontSize.X;
+        maximizedClientRect.bottom = doubledSize.height * coordFontSize.Y;
 
         Log::Comment(NoThrowString().Format(
             L"Emulate a maximize"));
@@ -4930,7 +4930,7 @@ void ScreenBufferTests::SnapCursorWithTerminalScrolling()
     // context
 
     auto& g = ServiceLocator::LocateGlobals();
-    CONSOLE_INFORMATION& gci = g.getConsoleInformation();
+    auto& gci = g.getConsoleInformation();
     gci.SetTerminalScrolling(true);
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
@@ -5004,7 +5004,7 @@ void ScreenBufferTests::ClearAlternateBuffer()
     // This is a test for microsoft/terminal#1189. Refer to that issue for more
     // context
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     auto& g = ServiceLocator::LocateGlobals();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
@@ -5183,7 +5183,7 @@ void ScreenBufferTests::TestExtendedTextAttributes()
         // attrs on the test console
         std::wstring debugString = vtSequence;
         {
-            size_t start_pos = 0;
+            auto start_pos = 0;
             while ((start_pos = debugString.find(L"\x1b", start_pos)) != std::string::npos)
             {
                 debugString.replace(start_pos, 1, L"\\x1b");
@@ -5277,10 +5277,10 @@ void ScreenBufferTests::TestExtendedTextAttributesWithColors()
 
     // colorStyle will be used to control whether we use a color from the 16
     // color table, a color from the 256 color table, or a pure RGB color.
-    const int UseDefault = 0;
-    const int Use16Color = 1;
-    const int Use256Color = 2;
-    const int UseRGBColor = 3;
+    const auto UseDefault = 0;
+    const auto Use16Color = 1;
+    const auto Use256Color = 2;
+    const auto UseRGBColor = 3;
 
     bool intense, faint, italics, underlined, doublyUnderlined, blink, invisible, crossedOut;
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"intense", intense));
@@ -5402,7 +5402,7 @@ void ScreenBufferTests::TestExtendedTextAttributesWithColors()
         // attrs on the test console
         std::wstring debugString = vtSequence;
         {
-            size_t start_pos = 0;
+            auto start_pos = 0;
             while ((start_pos = debugString.find(L"\x1b", start_pos)) != std::string::npos)
             {
                 debugString.replace(start_pos, 1, L"\\x1b");
@@ -5419,7 +5419,7 @@ void ScreenBufferTests::TestExtendedTextAttributesWithColors()
         stateMachine.ProcessString(L"X");
 
         auto iter = tbi.GetCellDataAt(cursorPos);
-        const TextAttribute currentAttrs = iter->TextAttr();
+        const auto currentAttrs = iter->TextAttr();
         VERIFY_ARE_EQUAL(attr, currentAttrs);
     };
 
@@ -5647,7 +5647,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     auto& cursor = si.GetTextBuffer().GetCursor();
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"CNL without margins");
     // Starting from column 20 of line 10.
@@ -5655,7 +5655,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move down 5 lines (CNL).
     stateMachine.ProcessString(L"\x1b[5E");
     // We should end up in column 0 of line 15.
-    VERIFY_ARE_EQUAL(COORD({ 0, 15 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 15), cursor.GetPosition());
 
     Log::Comment(L"CPL without margins");
     // Starting from column 20 of line 10.
@@ -5663,7 +5663,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move up 5 lines (CPL).
     stateMachine.ProcessString(L"\x1b[5F");
     // We should end up in column 0 of line 5.
-    VERIFY_ARE_EQUAL(COORD({ 0, 5 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 5), cursor.GetPosition());
 
     // Set the margins to 8:12 (9:13 in VT coordinates).
     stateMachine.ProcessString(L"\x1b[9;13r");
@@ -5676,7 +5676,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move down 5 lines (CNL).
     stateMachine.ProcessString(L"\x1b[5E");
     // We should stop on line 12, the bottom margin.
-    VERIFY_ARE_EQUAL(COORD({ 0, 12 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 12), cursor.GetPosition());
 
     Log::Comment(L"CPL inside margins");
     // Starting from column 20 of line 10.
@@ -5684,7 +5684,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move up 5 lines (CPL).
     stateMachine.ProcessString(L"\x1b[5F");
     // We should stop on line 8, the top margin.
-    VERIFY_ARE_EQUAL(COORD({ 0, 8 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 8), cursor.GetPosition());
 
     Log::Comment(L"CNL below bottom");
     // Starting from column 20 of line 13 (1 below bottom margin).
@@ -5692,7 +5692,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move down 5 lines (CNL).
     stateMachine.ProcessString(L"\x1b[5E");
     // We should end up in column 0 of line 18.
-    VERIFY_ARE_EQUAL(COORD({ 0, 18 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 18), cursor.GetPosition());
 
     Log::Comment(L"CPL above top margin");
     // Starting from column 20 of line 7 (1 above top margin).
@@ -5700,7 +5700,7 @@ void ScreenBufferTests::CursorNextPreviousLine()
     // Move up 5 lines (CPL).
     stateMachine.ProcessString(L"\x1b[5F");
     // We should end up in column 0 of line 2.
-    VERIFY_ARE_EQUAL(COORD({ 0, 2 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 2), cursor.GetPosition());
 }
 
 void ScreenBufferTests::CursorPositionRelative()
@@ -5711,7 +5711,7 @@ void ScreenBufferTests::CursorPositionRelative()
     auto& cursor = si.GetTextBuffer().GetCursor();
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"HPR without margins");
     // Starting from column 20 of line 10.
@@ -5719,7 +5719,7 @@ void ScreenBufferTests::CursorPositionRelative()
     // Move forward 5 columns (HPR).
     stateMachine.ProcessString(L"\x1b[5a");
     // We should end up in column 25.
-    VERIFY_ARE_EQUAL(COORD({ 25, 10 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(25, 10), cursor.GetPosition());
 
     Log::Comment(L"VPR without margins");
     // Starting from column 20 of line 10.
@@ -5727,7 +5727,7 @@ void ScreenBufferTests::CursorPositionRelative()
     // Move down 5 lines (VPR).
     stateMachine.ProcessString(L"\x1b[5e");
     // We should end up on line 15.
-    VERIFY_ARE_EQUAL(COORD({ 20, 15 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(20, 15), cursor.GetPosition());
 
     // Enable DECLRMM margin mode (future proofing for when we support it)
     stateMachine.ProcessString(L"\x1b[?69h");
@@ -5748,7 +5748,7 @@ void ScreenBufferTests::CursorPositionRelative()
     // Move forward 5 columns (HPR).
     stateMachine.ProcessString(L"\x1b[5a");
     // We should end up in column 25 (outside the right margin).
-    VERIFY_ARE_EQUAL(COORD({ 25, 10 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(25, 10), cursor.GetPosition());
 
     Log::Comment(L"VPR inside margins");
     // Starting from column 20 of line 10.
@@ -5756,7 +5756,7 @@ void ScreenBufferTests::CursorPositionRelative()
     // Move down 5 lines (VPR).
     stateMachine.ProcessString(L"\x1b[5e");
     // We should end up on line 15 (outside the bottom margin).
-    VERIFY_ARE_EQUAL(COORD({ 20, 15 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(20, 15), cursor.GetPosition());
 
     Log::Comment(L"HPR to end of line");
     // Starting from column 20 of line 10.
@@ -5765,7 +5765,7 @@ void ScreenBufferTests::CursorPositionRelative()
     stateMachine.ProcessString(L"\x1b[9999a");
     // We should end up in the rightmost column.
     const auto screenWidth = si.GetBufferSize().Width();
-    VERIFY_ARE_EQUAL(COORD({ screenWidth - 1, 10 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(screenWidth - 1, 10), cursor.GetPosition());
 
     Log::Comment(L"VPR to bottom of screen");
     // Starting from column 20 of line 10.
@@ -5774,7 +5774,7 @@ void ScreenBufferTests::CursorPositionRelative()
     stateMachine.ProcessString(L"\x1b[9999e");
     // We should end up on the last line.
     const auto screenHeight = si.GetViewport().Height();
-    VERIFY_ARE_EQUAL(COORD({ 20, screenHeight - 1 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(20, screenHeight - 1), cursor.GetPosition());
 }
 
 void ScreenBufferTests::CursorSaveRestore()
@@ -5798,7 +5798,7 @@ void ScreenBufferTests::CursorSaveRestore()
     const auto resetDECOM = L"\x1b[?6l";
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"Restore after save.");
     // Set the cursor position, attributes, and character set.
@@ -5814,10 +5814,10 @@ void ScreenBufferTests::CursorSaveRestore()
     // Restore state.
     stateMachine.ProcessString(restoreCursor);
     // Verify initial position, colors, and graphic character set.
-    VERIFY_ARE_EQUAL(COORD({ 20, 10 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(20, 10), cursor.GetPosition());
     VERIFY_ARE_EQUAL(colorAttrs, si.GetAttributes());
     stateMachine.ProcessString(asciiText);
-    VERIFY_IS_TRUE(_ValidateLineContains(COORD({ 20, 10 }), graphicText, colorAttrs));
+    VERIFY_IS_TRUE(_ValidateLineContains(til::point{ 20, 10 }, graphicText, colorAttrs));
 
     Log::Comment(L"Restore again without save.");
     // Reset the cursor position, attributes, and character set.
@@ -5827,10 +5827,10 @@ void ScreenBufferTests::CursorSaveRestore()
     // Restore state.
     stateMachine.ProcessString(restoreCursor);
     // Verify initial saved position, colors, and graphic character set.
-    VERIFY_ARE_EQUAL(COORD({ 20, 10 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(20, 10), cursor.GetPosition());
     VERIFY_ARE_EQUAL(colorAttrs, si.GetAttributes());
     stateMachine.ProcessString(asciiText);
-    VERIFY_IS_TRUE(_ValidateLineContains(COORD({ 20, 10 }), graphicText, colorAttrs));
+    VERIFY_IS_TRUE(_ValidateLineContains(til::point{ 20, 10 }, graphicText, colorAttrs));
 
     Log::Comment(L"Restore after reset.");
     // Soft reset.
@@ -5842,27 +5842,27 @@ void ScreenBufferTests::CursorSaveRestore()
     // Restore state.
     stateMachine.ProcessString(restoreCursor);
     // Verify home position, default attributes, and ascii character set.
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     VERIFY_ARE_EQUAL(defaultAttrs, si.GetAttributes());
     stateMachine.ProcessString(asciiText);
-    VERIFY_IS_TRUE(_ValidateLineContains(COORD({ 0, 0 }), asciiText, defaultAttrs));
+    VERIFY_IS_TRUE(_ValidateLineContains(til::point{}, asciiText, defaultAttrs));
 
     Log::Comment(L"Restore origin mode.");
     // Set margins and origin mode to relative.
     stateMachine.ProcessString(L"\x1b[10;20r");
     stateMachine.ProcessString(setDECOM);
     // Verify home position inside margins.
-    VERIFY_ARE_EQUAL(COORD({ 0, 9 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 9), cursor.GetPosition());
     // Save state and reset origin mode to absolute.
     stateMachine.ProcessString(saveCursor);
     stateMachine.ProcessString(resetDECOM);
     // Verify home position at origin.
-    VERIFY_ARE_EQUAL(COORD({ 0, 0 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point{}, cursor.GetPosition());
     // Restore state and move to home position.
     stateMachine.ProcessString(restoreCursor);
     stateMachine.ProcessString(L"\x1b[H");
     // Verify home position inside margins, i.e. relative origin mode restored.
-    VERIFY_ARE_EQUAL(COORD({ 0, 9 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(0, 9), cursor.GetPosition());
 
     Log::Comment(L"Clamp inside top margin.");
     // Reset margins, with absolute origin, and set cursor position.
@@ -5875,7 +5875,7 @@ void ScreenBufferTests::CursorSaveRestore()
     stateMachine.ProcessString(L"\x1b[20;25r");
     stateMachine.ProcessString(restoreCursor);
     // Verify Y position is clamped inside the top margin
-    VERIFY_ARE_EQUAL(COORD({ 5, 19 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(5, 19), cursor.GetPosition());
 
     Log::Comment(L"Clamp inside bottom margin.");
     // Reset margins, with absolute origin, and set cursor position.
@@ -5888,7 +5888,7 @@ void ScreenBufferTests::CursorSaveRestore()
     stateMachine.ProcessString(L"\x1b[1;10r");
     stateMachine.ProcessString(restoreCursor);
     // Verify Y position is clamped inside the top margin
-    VERIFY_ARE_EQUAL(COORD({ 5, 9 }), cursor.GetPosition());
+    VERIFY_ARE_EQUAL(til::point(5, 9), cursor.GetPosition());
 
     // Reset origin mode and margins.
     stateMachine.ProcessString(resetDECOM);
@@ -6180,7 +6180,7 @@ void ScreenBufferTests::TestWriteConsoleVTQuirkMode()
     bool useQuirk;
     VERIFY_SUCCEEDED(TestData::TryGetValue(L"useQuirk", useQuirk), L"whether to enable the quirk");
 
-    CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole(); // Lock must be taken to manipulate buffer.
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
@@ -6195,7 +6195,7 @@ void ScreenBufferTests::TestWriteConsoleVTQuirkMode()
     mainBuffer.SetAttributes(defaultAttribute);
 
     const auto verifyLastAttribute = [&](const TextAttribute& expected) {
-        const ROW& row = mainBuffer.GetTextBuffer().GetRowByOffset(cursor.GetPosition().Y);
+        const auto& row = mainBuffer.GetTextBuffer().GetRowByOffset(cursor.GetPosition().Y);
         const auto attrRow = &row.GetAttrRow();
         auto iter{ attrRow->begin() };
         iter += cursor.GetPosition().X - 1;
@@ -6320,7 +6320,7 @@ void ScreenBufferTests::TestReflowEndOfLineColor()
     yellow.SetIndexedBackground(TextColor::DARK_YELLOW);
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"Fill buffer with some data");
     stateMachine.ProcessString(L"\x1b[H");
@@ -6336,7 +6336,7 @@ void ScreenBufferTests::TestReflowEndOfLineColor()
     stateMachine.ProcessString(L"\x1b[2;6H"); // move the cursor to the end of the BBBBB's
 
     auto verifyBuffer = [&](const TextBuffer& tb, const til::rect& /*viewport*/, const bool /*before*/) {
-        const short width = tb.GetSize().Width();
+        const auto width = tb.GetSize().Width();
         Log::Comment(NoThrowString().Format(L"Buffer width: %d", width));
 
         auto iter0 = TestUtils::VerifyLineContains(tb, { 0, 0 }, L'A', red, 5u);
@@ -6396,7 +6396,7 @@ void ScreenBufferTests::TestReflowSmallerLongLineWithColor()
     yellow.SetIndexedBackground(TextColor::DARK_YELLOW);
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"Fill buffer with some data");
     stateMachine.ProcessString(L"\x1b[H");
@@ -6408,7 +6408,7 @@ void ScreenBufferTests::TestReflowSmallerLongLineWithColor()
     // Attributes fill 70 red, 5 green, the last 5 are {whatever it was before}
 
     auto verifyBuffer = [&](const TextBuffer& tb, const til::rect& /*viewport*/, const bool before) {
-        const short width = tb.GetSize().Width();
+        const auto width = tb.GetSize().Width();
         Log::Comment(NoThrowString().Format(L"Buffer width: %d", width));
 
         if (before)
@@ -6474,7 +6474,7 @@ void ScreenBufferTests::TestReflowBiggerLongLineWithColor()
     yellow.SetIndexedBackground(TextColor::DARK_YELLOW);
 
     Log::Comment(L"Make sure the viewport is at 0,0");
-    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, COORD({ 0, 0 }), true));
+    VERIFY_SUCCEEDED(si.SetViewportOrigin(true, til::point{}, true));
 
     Log::Comment(L"Fill buffer with some data");
     stateMachine.ProcessString(L"\x1b[H");
@@ -6487,7 +6487,7 @@ void ScreenBufferTests::TestReflowBiggerLongLineWithColor()
     // Attributes fill 85 red, 5 green, the rest are {whatever it was before}
 
     auto verifyBuffer = [&](const TextBuffer& tb, const til::rect& /*viewport*/, const bool before) {
-        const short width = tb.GetSize().Width();
+        const auto width = tb.GetSize().Width();
         Log::Comment(NoThrowString().Format(L"Buffer width: %d", width));
 
         if (before)
@@ -6565,7 +6565,7 @@ void ScreenBufferTests::TestDeferredMainBufferResize()
         auto& currentBuffer = gci.GetActiveOutputBuffer();
         // Set up an xterm-256 renderer for conpty
         wil::unique_hfile hFile = wil::unique_hfile(INVALID_HANDLE_VALUE);
-        Viewport initialViewport = currentBuffer.GetViewport();
+        auto initialViewport = currentBuffer.GetViewport();
         auto vtRenderEngine = std::make_unique<Microsoft::Console::Render::Xterm256Engine>(std::move(hFile),
                                                                                            initialViewport);
         // We don't care about the output, so let it just drain to the void.

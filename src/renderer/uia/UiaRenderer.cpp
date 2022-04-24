@@ -57,7 +57,7 @@ UiaEngine::UiaEngine(IUiaEventDispatcher* dispatcher) :
 // - psrRegion - Character region (SMALL_RECT) that has been changed
 // Return Value:
 // - S_OK, else an appropriate HRESULT for failing to allocate or write.
-[[nodiscard]] HRESULT UiaEngine::Invalidate(const SMALL_RECT* const /*psrRegion*/) noexcept
+[[nodiscard]] HRESULT UiaEngine::Invalidate(const til::rect* const /*psrRegion*/) noexcept
 {
     _textBufferChanged = true;
     return S_OK;
@@ -70,7 +70,7 @@ UiaEngine::UiaEngine(IUiaEventDispatcher* dispatcher) :
 // - psrRegion - the region covered by the cursor
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT UiaEngine::InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept
+[[nodiscard]] HRESULT UiaEngine::InvalidateCursor(const til::rect* const psrRegion) noexcept
 try
 {
     RETURN_HR_IF_NULL(E_INVALIDARG, psrRegion);
@@ -104,7 +104,7 @@ CATCH_RETURN();
 // - rectangles - One or more rectangles describing character positions on the grid
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT UiaEngine::InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept
+[[nodiscard]] HRESULT UiaEngine::InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept
 {
     // early exit: different number of rows
     if (_prevSelection.size() != rectangles.size())
@@ -368,7 +368,7 @@ void UiaEngine::WaitUntilCanRender() noexcept
 //  - rect - Rectangle to invert or highlight to make the selection area
 // Return Value:
 // - S_FALSE
-[[nodiscard]] HRESULT UiaEngine::PaintSelection(const SMALL_RECT /*rect*/) noexcept
+[[nodiscard]] HRESULT UiaEngine::PaintSelection(const til::rect& /*rect*/) noexcept
 {
     return S_FALSE;
 }

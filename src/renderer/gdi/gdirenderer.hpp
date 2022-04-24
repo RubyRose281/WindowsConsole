@@ -27,11 +27,11 @@ namespace Microsoft::Console::Render
 
         [[nodiscard]] HRESULT SetHwnd(const HWND hwnd) noexcept;
 
-        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept override;
+        [[nodiscard]] HRESULT InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept override;
         [[nodiscard]] HRESULT InvalidateScroll(const COORD* const pcoordDelta) noexcept override;
         [[nodiscard]] HRESULT InvalidateSystem(const RECT* const prcDirtyClient) noexcept override;
-        [[nodiscard]] HRESULT Invalidate(const SMALL_RECT* const psrRegion) noexcept override;
-        [[nodiscard]] HRESULT InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept override;
+        [[nodiscard]] HRESULT Invalidate(const til::rect* const psrRegion) noexcept override;
+        [[nodiscard]] HRESULT InvalidateCursor(const til::rect* const psrRegion) noexcept override;
         [[nodiscard]] HRESULT InvalidateAll() noexcept override;
         [[nodiscard]] HRESULT PrepareForTeardown(_Out_ bool* const pForcePaint) noexcept override;
 
@@ -55,7 +55,7 @@ namespace Microsoft::Console::Render
                                                    const COLORREF color,
                                                    const size_t cchLine,
                                                    const COORD coordTarget) noexcept override;
-        [[nodiscard]] HRESULT PaintSelection(const SMALL_RECT rect) noexcept override;
+        [[nodiscard]] HRESULT PaintSelection(const til::rect& rect) noexcept override;
 
         [[nodiscard]] HRESULT PaintCursor(const CursorOptions& options) noexcept override;
 
@@ -171,7 +171,7 @@ namespace Microsoft::Console::Render
         static const ULONG s_ulMaxCursorHeightPercent = 100;
 
         [[nodiscard]] HRESULT _ScaleByFont(const COORD* const pcoord, _Out_ POINT* const pPoint) const noexcept;
-        [[nodiscard]] HRESULT _ScaleByFont(const SMALL_RECT* const psr, _Out_ RECT* const prc) const noexcept;
+        [[nodiscard]] HRESULT _ScaleByFont(const til::rect* const psr, _Out_ RECT* const prc) const noexcept;
         [[nodiscard]] HRESULT _ScaleByFont(const RECT* const prc, _Out_ SMALL_RECT* const psr) const noexcept;
 
         static int s_ScaleByDpi(const int iPx, const int iDpi);

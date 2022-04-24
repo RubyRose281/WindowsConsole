@@ -82,7 +82,7 @@ using namespace Microsoft::Console::Render;
 // - prc - Pixel region (RECT) for drawing to the client surface.
 // Return Value:
 // - S_OK or safe math failure value.
-[[nodiscard]] HRESULT GdiEngine::_ScaleByFont(const SMALL_RECT* const psr, _Out_ RECT* const prc) const noexcept
+[[nodiscard]] HRESULT GdiEngine::_ScaleByFont(const til::rect* const psr, _Out_ RECT* const prc) const noexcept
 {
     COORD const coordFontSize = _GetFontSize();
     RETURN_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_STATE), coordFontSize.X == 0 || coordFontSize.Y == 0);

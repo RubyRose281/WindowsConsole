@@ -227,9 +227,9 @@ void WriteToScreen(SCREEN_INFORMATION& screenInfo, const Viewport& region)
         if (screenBuffer.HasAccessibilityEventing())
         {
             // Notify accessibility
-            auto endingCoordinate = startingCoordinate;
+            auto endingCoordinate = til::wrap_coord(startingCoordinate);
             bufferSize.MoveInBounds(cellsModified, endingCoordinate);
-            screenBuffer.NotifyAccessibilityEventing(startingCoordinate.X, startingCoordinate.Y, endingCoordinate.X, endingCoordinate.Y);
+            screenBuffer.NotifyAccessibilityEventing(startingCoordinate.X, startingCoordinate.Y, gsl::narrow<short>(endingCoordinate.X), gsl::narrow<short>(endingCoordinate.Y));
         }
     }
     CATCH_RETURN();
@@ -289,9 +289,9 @@ void WriteToScreen(SCREEN_INFORMATION& screenInfo, const Viewport& region)
         // Notify accessibility
         if (screenInfo.HasAccessibilityEventing())
         {
-            auto endingCoordinate = startingCoordinate;
+            auto endingCoordinate = til::wrap_coord(startingCoordinate);
             bufferSize.MoveInBounds(cellsModified, endingCoordinate);
-            screenInfo.NotifyAccessibilityEventing(startingCoordinate.X, startingCoordinate.Y, endingCoordinate.X, endingCoordinate.Y);
+            screenInfo.NotifyAccessibilityEventing(startingCoordinate.X, startingCoordinate.Y, gsl::narrow<short>(endingCoordinate.X), gsl::narrow<short>(endingCoordinate.Y));
         }
 
         // GH#3126 - This is a shim for powershell's `Clear-Host` function. In

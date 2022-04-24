@@ -750,7 +750,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
 //  - rect - Rectangle to invert or highlight to make the selection area
 // Return Value:
 // - S_OK or suitable GDI HRESULT error.
-[[nodiscard]] HRESULT GdiEngine::PaintSelection(const SMALL_RECT rect) noexcept
+[[nodiscard]] HRESULT GdiEngine::PaintSelection(const til::rect& rect) noexcept
 {
     LOG_IF_FAILED(_FlushBufferLines());
 

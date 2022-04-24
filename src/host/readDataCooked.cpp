@@ -109,10 +109,10 @@ COOKED_READ_DATA::COOKED_READ_DATA(_In_ InputBuffer* const pInputBuffer,
         OriginalCursorPosition() = screenInfo.GetTextBuffer().GetCursor().GetPosition();
         OriginalCursorPosition().X -= (SHORT)_currentPosition;
 
-        const SHORT sScreenBufferSizeX = screenInfo.GetBufferSize().Width();
+        const auto sScreenBufferSizeX = screenInfo.GetBufferSize().Width();
         while (OriginalCursorPosition().X < 0)
         {
-            OriginalCursorPosition().X += sScreenBufferSizeX;
+            OriginalCursorPosition().X += gsl::narrow<short>(sScreenBufferSizeX);
             OriginalCursorPosition().Y -= 1;
         }
     }
@@ -578,7 +578,7 @@ bool COOKED_READ_DATA::ProcessInput(const wchar_t wchOrig,
     else
     {
         bool CallWrite = true;
-        const SHORT sScreenBufferSizeX = _screenInfo.GetBufferSize().Width();
+        const auto sScreenBufferSizeX = _screenInfo.GetBufferSize().Width();
 
         // processing in the middle of the line is more complex:
 

@@ -172,7 +172,7 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
         }
 
 #ifdef _WINCONTYPES_
-        explicit constexpr point(const COORD other) noexcept :
+        constexpr point(const COORD other) noexcept :
             x{ other.X }, y{ other.Y }
         {
         }
@@ -180,6 +180,11 @@ namespace til // Terminal Implementation Library. Also: "Today I Learned"
         constexpr COORD to_win32_coord() const
         {
             return { narrow_x<short>(), narrow_y<short>() };
+        }
+
+        constexpr operator COORD() const
+        {
+            return to_win32_coord();
         }
 #endif
 

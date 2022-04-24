@@ -145,9 +145,9 @@ COORD Selection::WordByWordSelection(const bool fReverse,
                                      const COORD coordAnchor,
                                      const COORD coordSelPoint) const
 {
-    const CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
-    const SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
-    COORD outCoord = coordSelPoint;
+    const auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
+    const auto& screenInfo = gci.GetActiveOutputBuffer();
+    auto outCoord = til::wrap_coord(coordSelPoint);
 
     // first move one character in the requested direction
     if (!fReverse)
@@ -174,11 +174,11 @@ COORD Selection::WordByWordSelection(const bool fReverse,
     // if line boundaries fail, then set them to the buffer corners so they don't restrict anything.
     if (!fSuccess)
     {
-        coordMaxLeft.X = bufferSize.Left();
-        coordMaxLeft.Y = bufferSize.Top();
+        coordMaxLeft.X = gsl::narrow<short>(bufferSize.Left());
+        coordMaxLeft.Y = gsl::narrow<short>(bufferSize.Top());
 
-        coordMaxRight.X = bufferSize.RightInclusive();
-        coordMaxRight.Y = bufferSize.BottomInclusive();
+        coordMaxRight.X = gsl::narrow<short>(bufferSize.RightInclusive());
+        coordMaxRight.Y = gsl::narrow<short>(bufferSize.BottomInclusive());
     }
 
     // track whether we failed to move during an operation
@@ -324,14 +324,14 @@ bool Selection::HandleKeyboardLineSelectionEvent(const INPUT_KEY_INFO* const pIn
     const SMALL_RECT rectSelection = _srSelectionRect;
 
     // the selection point is the other corner of the rectangle from the anchor that we're about to manipulate
-    COORD coordSelPoint;
+    til::point coordSelPoint;
     coordSelPoint.X = coordAnchor.X == rectSelection.Left ? rectSelection.Right : rectSelection.Left;
     coordSelPoint.Y = coordAnchor.Y == rectSelection.Top ? rectSelection.Bottom : rectSelection.Top;
 
     // this is the maximum size of the buffer
     const auto bufferSize = gci.GetActiveOutputBuffer().GetBufferSize();
 
-    const SHORT sWindowHeight = gci.GetActiveOutputBuffer().GetViewport().Height();
+    const auto sWindowHeight = gci.GetActiveOutputBuffer().GetViewport().Height();
 
     FAIL_FAST_IF(!bufferSize.IsInBounds(coordSelPoint));
 
@@ -759,7 +759,7 @@ bool Selection::_HandleMarkModeSelectionNav(const INPUT_KEY_INFO* const pInputKe
         SHORT iNextRightX = 0;
         SHORT iNextLeftX = 0;
 
-        const COORD cursorPos = textBuffer.GetCursor().GetPosition();
+        const auto cursorPos = textBuffer.GetCursor().GetPosition();
 
         try
         {
@@ -852,10 +852,10 @@ bool Selection::_HandleMarkModeSelectionNav(const INPUT_KEY_INFO* const pInputKe
         case VK_NEXT:
         {
             cursor.IncrementYPosition(ScreenInfo.GetViewport().Height() - 1);
-            const COORD coordBufferSize = ScreenInfo.GetTerminalBufferSize().Dimensions();
-            if (cursor.GetPosition().Y >= coordBufferSize.Y)
+            const auto coordBufferSize = ScreenInfo.GetTerminalBufferSize().Dimensions();
+            if (cursor.GetPosition().Y >= coordBufferSize.height)
             {
-                cursor.SetYPosition(coordBufferSize.Y - 1);
+                cursor.SetYPosition(coordBufferSize.height - 1);
             }
             break;
         }
@@ -963,8 +963,8 @@ bool Selection::_HandleMarkModeSelectionNav(const INPUT_KEY_INFO* const pInputKe
     }
 
     const auto& cookedRead = gci.CookedReadData();
-    const COORD coordStart = cookedRead.OriginalCursorPosition();
-    COORD coordEnd = cookedRead.OriginalCursorPosition();
+    const auto coordStart = cookedRead.OriginalCursorPosition();
+    auto coordEnd = til::wrap_coord(cookedRead.OriginalCursorPosition());
 
     if (coordEnd.X < 0 && coordEnd.Y < 0)
     {
@@ -988,8 +988,7 @@ bool Selection::_HandleMarkModeSelectionNav(const INPUT_KEY_INFO* const pInputKe
 
     if (pcoordInputEnd != nullptr)
     {
-        pcoordInputEnd->X = coordEnd.X;
-        pcoordInputEnd->Y = coordEnd.Y;
+        *pcoordInputEnd = coordEnd;
     }
 
     return true;

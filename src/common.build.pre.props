@@ -94,7 +94,7 @@
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
-      <TreatSpecificWarningsAsErrors>4189;4100;4242;4389;4244</TreatSpecificWarningsAsErrors>
+      <TreatSpecificWarningsAsErrors>4189;4100;4242;4389</TreatSpecificWarningsAsErrors>
       <!--<WarningLevel>EnableAllWarnings</WarningLevel>-->
       <TreatWarningAsError>true</TreatWarningAsError>
       <!--
@@ -107,7 +107,7 @@
         C4467: usage of ATL attributes is deprecated
           Conhost code still uses ATL.
       -->
-      <DisableSpecificWarnings>4103;4201;4312;4467;5105;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4103;4201;4242;4244;4312;4467;5105;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <PrecompiledHeaderFile>precomp.h</PrecompiledHeaderFile>

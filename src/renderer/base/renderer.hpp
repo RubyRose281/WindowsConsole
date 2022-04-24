@@ -105,7 +105,7 @@ namespace Microsoft::Console::Render
         void _PaintOverlay(IRenderEngine& engine, const RenderOverlay& overlay);
         [[nodiscard]] HRESULT _UpdateDrawingBrushes(_In_ IRenderEngine* const pEngine, const TextAttribute attr, const bool usingSoftFont, const bool isSettingDefaultBrushes);
         [[nodiscard]] HRESULT _PerformScrolling(_In_ IRenderEngine* const pEngine);
-        std::vector<SMALL_RECT> _GetSelectionRects() const;
+        std::vector<til::rect> _GetSelectionRects() const;
         void _ScrollPreviousSelection(const til::point delta);
         [[nodiscard]] HRESULT _PaintTitle(IRenderEngine* const pEngine);
         [[nodiscard]] std::optional<CursorOptions> _GetCursorInfo();
@@ -120,7 +120,7 @@ namespace Microsoft::Console::Render
         std::optional<interval_tree::IntervalTree<til::point, size_t>::interval> _hoveredInterval;
         Microsoft::Console::Types::Viewport _viewport;
         std::vector<Cluster> _clusterBuffer;
-        std::vector<SMALL_RECT> _previousSelection;
+        std::vector<til::rect> _previousSelection;
         std::function<void()> _pfnRendererEnteredErrorState;
         bool _destructing = false;
 

@@ -70,7 +70,7 @@ static void _CopyRectangle(SCREEN_INFORMATION& screenInfo,
     const auto sourceOrigin = source.Origin();
 
     // 0. If the source and the target are the same... we have nothing to do. Leave.
-    if (sourceOrigin == targetOrigin)
+    if (sourceOrigin == til::wrap_coord(targetOrigin))
     {
         return;
     }
@@ -80,13 +80,13 @@ static void _CopyRectangle(SCREEN_INFORMATION& screenInfo,
     //    row locations instead of copying or moving anything.
     {
         const auto bufferSize = screenInfo.GetBufferSize().Dimensions();
-        const auto sourceFullRows = source.Width() == bufferSize.X;
+        const auto sourceFullRows = source.Width() == bufferSize.width;
         const auto verticalCopyOnly = source.Left() == 0 && targetOrigin.X == 0;
         if (sourceFullRows && verticalCopyOnly)
         {
             const auto delta = targetOrigin.Y - source.Top();
 
-            screenInfo.GetTextBuffer().ScrollRows(source.Top(), source.Height(), gsl::narrow<SHORT>(delta));
+            screenInfo.GetTextBuffer().ScrollRows(gsl::narrow<SHORT>(source.Top()), gsl::narrow<SHORT>(source.Height()), gsl::narrow<SHORT>(delta));
 
             return;
         }

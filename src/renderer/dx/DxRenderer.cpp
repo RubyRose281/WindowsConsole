@@ -1080,7 +1080,7 @@ bool DxEngine::_IsAllInvalid() const noexcept
 // - psrRegion - Character rectangle
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT DxEngine::Invalidate(const SMALL_RECT* const psrRegion) noexcept
+[[nodiscard]] HRESULT DxEngine::Invalidate(const til::rect* const psrRegion) noexcept
 try
 {
     RETURN_HR_IF_NULL(E_INVALIDARG, psrRegion);
@@ -1100,7 +1100,7 @@ CATCH_RETURN()
 // - psrRegion - the region covered by the cursor
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT DxEngine::InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept
+[[nodiscard]] HRESULT DxEngine::InvalidateCursor(const til::rect* const psrRegion) noexcept
 {
     return Invalidate(psrRegion);
 }
@@ -1133,7 +1133,7 @@ CATCH_RETURN();
 // - rectangles - One or more rectangles describing character positions on the grid
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT DxEngine::InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept
+[[nodiscard]] HRESULT DxEngine::InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept
 {
     if (!_allInvalid)
     {
@@ -1816,7 +1816,7 @@ CATCH_RETURN()
 //  - rect - Rectangle to invert or highlight to make the selection area
 // Return Value:
 // - S_OK or relevant DirectX error.
-[[nodiscard]] HRESULT DxEngine::PaintSelection(const SMALL_RECT rect) noexcept
+[[nodiscard]] HRESULT DxEngine::PaintSelection(const til::rect& rect) noexcept
 try
 {
     // If a clip rectangle is in place from drawing the text layer, remove it here.
@@ -1827,7 +1827,7 @@ try
     _d2dBrushForeground->SetColor(_selectionBackground);
     const auto resetColorOnExit = wil::scope_exit([&]() noexcept { _d2dBrushForeground->SetColor(existingColor); });
 
-    const D2D1_RECT_F draw = til::rect{ Viewport::FromExclusive(rect).ToInclusive() }.scale_up(_fontRenderData->GlyphCell()).to_d2d_rect();
+    const D2D1_RECT_F draw = rect.scale_up(_fontRenderData->GlyphCell()).to_d2d_rect();
 
     _d2dDeviceContext->FillRectangle(draw, _d2dBrushForeground.Get());
 

@@ -79,7 +79,7 @@ private:
 
     std::vector<OutputCell>::const_iterator _WriteConversionArea(const std::vector<OutputCell>::const_iterator begin,
                                                                  const std::vector<OutputCell>::const_iterator end,
-                                                                 COORD& pos,
+                                                                 til::point& pos,
                                                                  const Microsoft::Console::Types::Viewport view,
                                                                  SCREEN_INFORMATION& screenInfo);
 

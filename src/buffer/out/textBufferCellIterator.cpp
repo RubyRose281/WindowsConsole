@@ -123,8 +123,8 @@ TextBufferCellIterator& TextBufferCellIterator::operator+=(const ptrdiff_t& move
     const auto boundsLeft = _bounds.Left();
     const auto boundsBottomInclusive = _bounds.BottomInclusive();
     const auto boundsTop = _bounds.Top();
-    const auto oldX = _pos.X;
-    const auto oldY = _pos.Y;
+    const til::CoordType oldX = _pos.X;
+    const til::CoordType oldY = _pos.Y;
 
     // Under MSVC writing the individual members of a COORD generates worse assembly
     // compared to having them be local variables. This causes a performance impact.
@@ -168,15 +168,15 @@ TextBufferCellIterator& TextBufferCellIterator::operator+=(const ptrdiff_t& move
         const CharRow& charRow = _pRow->GetCharRow();
         _view.UpdateText(charRow.GlyphAt(newX));
         _view.UpdateDbcsAttribute(charRow.DbcsAttrAt(newX));
-        _pos.X = newX;
+        _pos.X = gsl::narrow<short>(newX);
     }
     else
     {
         // cold path (_GenerateView is slow)
-        _pRow = s_GetRow(_buffer, { newX, newY });
+        _pRow = s_GetRow(_buffer, til::unwrap_coord({ newX, newY }));
         _attrIter = _pRow->GetAttrRow().cbegin() + newX;
-        _pos.X = newX;
-        _pos.Y = newY;
+        _pos.X = gsl::narrow<short>(newX);
+        _pos.Y = gsl::narrow<short>(newY);
         _GenerateView();
     }
 
@@ -197,7 +197,7 @@ TextBufferCellIterator& TextBufferCellIterator::operator-=(const ptrdiff_t& move
         return (*this) += (-move);
     }
 
-    auto newPos = _pos;
+    auto newPos = til::wrap_coord(_pos);
     while (move > 0 && !_exceeded)
     {
         _exceeded = !_bounds.DecrementInBounds(newPos);

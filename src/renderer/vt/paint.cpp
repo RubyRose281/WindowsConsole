@@ -77,7 +77,7 @@ using namespace Microsoft::Console::Types;
 
     // If we deferred a cursor movement during the frame, make sure we put the
     //      cursor in the right place before we end the frame.
-    if (_deferredCursorPos != INVALID_COORDS)
+    if (til::wrap_coord(_deferredCursorPos) != til::wrap_coord(INVALID_COORDS))
     {
         RETURN_IF_FAILED(_MoveCursor(_deferredCursorPos));
     }
@@ -176,7 +176,7 @@ using namespace Microsoft::Console::Types;
 //  - rect - Rectangle to invert or highlight to make the selection area
 // Return Value:
 // - S_OK
-[[nodiscard]] HRESULT VtEngine::PaintSelection(const SMALL_RECT /*rect*/) noexcept
+[[nodiscard]] HRESULT VtEngine::PaintSelection(const til::rect& /*rect*/) noexcept
 {
     return S_OK;
 }
@@ -550,7 +550,7 @@ using namespace Microsoft::Console::Types;
         //   cursor somewhere else before the end of the frame, we'll move the
         //   cursor to the deferred position at the end of the frame, or right
         //   before we need to print new text.
-        _deferredCursorPos = { _lastText.X + sNumSpaces, _lastText.Y };
+        _deferredCursorPos = til::unwrap_coord({ _lastText.X + sNumSpaces, _lastText.Y });
 
         if (_deferredCursorPos.X <= _lastViewport.RightInclusive())
         {
@@ -567,7 +567,7 @@ using namespace Microsoft::Console::Types;
         //      line is already empty.
         if (optimalToUseECH)
         {
-            _deferredCursorPos = { _lastText.X + sNumSpaces, _lastText.Y };
+            _deferredCursorPos = til::unwrap_coord({ _lastText.X + sNumSpaces, _lastText.Y });
         }
         else if (numSpaces > 0 && removeSpaces) // if we deleted the spaces... re-add them
         {

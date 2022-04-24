@@ -38,7 +38,6 @@ AdaptDispatch::AdaptDispatch(std::unique_ptr<ConGetSet> pConApi, Renderer& rende
     _termOutput()
 {
     THROW_HR_IF_NULL(E_INVALIDARG, _pConApi.get());
-    _scrollMargins = { 0 }; // initially, there are no scroll margins.
 }
 
 // Routine Description:
@@ -212,8 +211,8 @@ bool AdaptDispatch::_CursorMovePosition(const Offset rowOffset, const Offset col
 
     // For relative movement, the given offsets will be relative to
     // the current cursor position.
-    int row = cursorPosition.Y;
-    int col = cursorPosition.X;
+    auto row = cursorPosition.Y;
+    auto col = cursorPosition.X;
 
     // But if the row is absolute, it will be relative to the top of the
     // viewport, or the top margin, depending on the origin mode.
@@ -232,8 +231,8 @@ bool AdaptDispatch::_CursorMovePosition(const Offset rowOffset, const Offset col
     // Adjust the base position by the given offsets and clamp the results.
     // The row is constrained within the viewport's vertical boundaries,
     // while the column is constrained by the buffer width.
-    row = std::clamp<int>(row + rowOffset.Value, viewport.top, viewport.bottom - 1);
-    col = std::clamp<int>(col + colOffset.Value, 0, textBuffer.GetSize().Width() - 1);
+    row = std::clamp(row + rowOffset.Value, viewport.top, viewport.bottom - 1);
+    col = std::clamp(col + colOffset.Value, 0, textBuffer.GetSize().Width() - 1);
 
     // If the operation needs to be clamped inside the margins, or the origin
     // mode is relative (which always requires margin clamping), then the row
@@ -259,8 +258,7 @@ bool AdaptDispatch::_CursorMovePosition(const Offset rowOffset, const Offset col
     }
 
     // Finally, attempt to set the adjusted cursor position back into the console.
-    const COORD newPos = { gsl::narrow_cast<SHORT>(col), gsl::narrow_cast<SHORT>(row) };
-    cursor.SetPosition(textBuffer.ClampPositionWithinLine(newPos));
+    cursor.SetPosition(textBuffer.ClampPositionWithinLine({ col, row }));
     _ApplyCursorMovementFlags(cursor);
 
     return true;
@@ -452,11 +450,11 @@ void AdaptDispatch::_ScrollRectVertically(TextBuffer& textBuffer, const til::rec
         // For now we're assuming the scrollRect is always the full width of the
         // buffer, but this will likely need to be extended to support scrolling
         // of arbitrary widths at some point in the future.
-        const auto top = gsl::narrow_cast<short>(delta > 0 ? scrollRect.top : (scrollRect.top + absoluteDelta));
+        const auto top = gsl::narrow_cast<short>(delta > 0 ? scrollRect.top : scrollRect.top + absoluteDelta);
         const auto height = gsl::narrow_cast<short>(scrollRect.height() - absoluteDelta);
         const auto actualDelta = gsl::narrow_cast<short>(delta > 0 ? absoluteDelta : -absoluteDelta);
         textBuffer.ScrollRows(top, height, actualDelta);
-        textBuffer.TriggerRedraw(Viewport::FromInclusive(scrollRect.to_small_rect()));
+        textBuffer.TriggerRedraw(Viewport::FromExclusive(scrollRect));
     }
 
     // Rows revealed by the scroll are filled with standard erase attributes.
@@ -1478,8 +1476,7 @@ bool AdaptDispatch::ReverseLineFeed()
     else if (cursorPosition.Y > viewport.top)
     {
         // Otherwise we move the cursor up, but not past the top of the viewport.
-        const COORD newCursorPosition{ cursorPosition.X, cursorPosition.Y - 1 };
-        cursor.SetPosition(textBuffer.ClampPositionWithinLine(newCursorPosition));
+        cursor.SetPosition(textBuffer.ClampPositionWithinLine({ cursorPosition.X, cursorPosition.Y - 1 }));
         _ApplyCursorMovementFlags(cursor);
     }
     return true;
@@ -1536,7 +1533,7 @@ bool AdaptDispatch::UseMainScreenBuffer()
 bool AdaptDispatch::HorizontalTabSet()
 {
     const auto& textBuffer = _pConApi->GetTextBuffer();
-    const auto width = textBuffer.GetSize().Dimensions().X;
+    const auto width = textBuffer.GetSize().Dimensions().width;
     const auto column = textBuffer.GetCursor().GetPosition().X;
 
     _InitTabStopsForWidth(width);
@@ -1639,7 +1636,7 @@ bool AdaptDispatch::TabClear(const DispatchTypes::TabClearType clearType)
 void AdaptDispatch::_ClearSingleTabStop()
 {
     const auto& textBuffer = _pConApi->GetTextBuffer();
-    const auto width = textBuffer.GetSize().Dimensions().X;
+    const auto width = textBuffer.GetSize().Dimensions().width;
     const auto column = textBuffer.GetCursor().GetPosition().X;
 
     _InitTabStopsForWidth(width);
@@ -1948,7 +1945,7 @@ bool AdaptDispatch::ScreenAlignmentPattern()
 {
     const auto viewport = _pConApi->GetViewport();
     auto& textBuffer = _pConApi->GetTextBuffer();
-    const auto bufferWidth = textBuffer.GetSize().Dimensions().X;
+    const auto bufferWidth = textBuffer.GetSize().Dimensions().width;
 
     // Fill the screen with the letter E using the default attributes.
     _FillRect(textBuffer, { 0, viewport.top, bufferWidth, viewport.bottom }, L'E', {});
@@ -1993,9 +1990,9 @@ void AdaptDispatch::_EraseScrollback()
     // Scroll the viewport content to the top of the buffer.
     textBuffer.ScrollRows(top, height, -top);
     // Clear everything after the viewport.
-    _FillRect(textBuffer, { 0, height, bufferSize.X, bufferSize.Y }, L' ', {});
+    _FillRect(textBuffer, { 0, height, bufferSize.width, bufferSize.height }, L' ', {});
     // Also reset the line rendition for all of the cleared rows.
-    textBuffer.ResetLineRenditionRange(height, bufferSize.Y);
+    textBuffer.ResetLineRenditionRange(height, bufferSize.height);
     // Move the viewport
     _pConApi->SetViewportPosition({ viewport.left, 0 });
     // Move the cursor to the same relative location.

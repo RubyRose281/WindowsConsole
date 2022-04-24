@@ -54,7 +54,7 @@ HRESULT GdiEngine::InvalidateScroll(const COORD* const pcoordDelta) noexcept
 // - rectangles - Vector of rectangles to draw, line by line
 // Return Value:
 // - HRESULT S_OK or GDI-based error code
-HRESULT GdiEngine::InvalidateSelection(const std::vector<SMALL_RECT>& rectangles) noexcept
+HRESULT GdiEngine::InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept
 {
     for (const auto& rect : rectangles)
     {
@@ -71,7 +71,7 @@ HRESULT GdiEngine::InvalidateSelection(const std::vector<SMALL_RECT>& rectangles
 // - psrRegion - Character region (SMALL_RECT) that has been changed
 // Return Value:
 // - S_OK, GDI related failure, or safemath failure.
-HRESULT GdiEngine::Invalidate(const SMALL_RECT* const psrRegion) noexcept
+HRESULT GdiEngine::Invalidate(const til::rect* const psrRegion) noexcept
 {
     RECT rcRegion = { 0 };
     RETURN_IF_FAILED(_ScaleByFont(psrRegion, &rcRegion));
@@ -84,7 +84,7 @@ HRESULT GdiEngine::Invalidate(const SMALL_RECT* const psrRegion) noexcept
 // - psrRegion - the region covered by the cursor
 // Return Value:
 // - S_OK, else an appropriate HRESULT for failing to allocate or write.
-HRESULT GdiEngine::InvalidateCursor(const SMALL_RECT* const psrRegion) noexcept
+HRESULT GdiEngine::InvalidateCursor(const til::rect* const psrRegion) noexcept
 {
     return this->Invalidate(psrRegion);
 }
