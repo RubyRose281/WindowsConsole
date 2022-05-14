@@ -110,15 +110,20 @@ constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
     _api.invalidatedCursorArea.top = gsl::narrow_cast<u16>(clamp<int>(_api.invalidatedCursorArea.top + delta, u16min, u16max));
     _api.invalidatedCursorArea.bottom = gsl::narrow_cast<u16>(clamp<int>(_api.invalidatedCursorArea.bottom + delta, u16min, u16max));
 
-    if (delta < 0)
+    if (_api.invalidatedRows.x < _api.invalidatedRows.y)
     {
-        _api.invalidatedRows.x = gsl::narrow_cast<u16>(clamp<int>(_api.invalidatedRows.x + delta, u16min, u16max));
-        _api.invalidatedRows.y = _api.cellCount.y;
-    }
-    else
-    {
-        _api.invalidatedRows.x = 0;
-        _api.invalidatedRows.y = gsl::narrow_cast<u16>(clamp<int>(_api.invalidatedRows.y + delta, u16min, u16max));
+        if (delta < 0)
+        {
+            const auto v = _api.invalidatedRows.x + delta;
+            const auto w = clamp<int>(v, u16min, u16max);
+            _api.invalidatedRows.x = gsl::narrow_cast<u16>(w);
+            _api.invalidatedRows.y = _api.cellCount.y;
+        }
+        else
+        {
+            _api.invalidatedRows.x = 0;
+            _api.invalidatedRows.y = gsl::narrow_cast<u16>(clamp<int>(_api.invalidatedRows.y + delta, u16min, u16max));
+        }
     }
 
     return S_OK;
@@ -174,9 +179,15 @@ constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
 
 [[nodiscard]] HRESULT AtlasEngine::UpdateViewport(const SMALL_RECT srNewViewport) noexcept
 {
-    _api.cellCount.x = gsl::narrow_cast<u16>(srNewViewport.Right - srNewViewport.Left + 1);
-    _api.cellCount.y = gsl::narrow_cast<u16>(srNewViewport.Bottom - srNewViewport.Top + 1);
-    WI_SetFlag(_api.invalidations, ApiInvalidations::Size);
+    const u16x2 cellCount{
+        gsl::narrow_cast<u16>(srNewViewport.Right - srNewViewport.Left + 1),
+        gsl::narrow_cast<u16>(srNewViewport.Bottom - srNewViewport.Top + 1),
+    };
+    if (_api.cellCount != cellCount)
+    {
+        _api.cellCount = cellCount;
+        WI_SetFlag(_api.invalidations, ApiInvalidations::Size);
+    }
     return S_OK;
 }
 

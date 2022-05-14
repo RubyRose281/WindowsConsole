@@ -151,6 +151,7 @@ namespace Microsoft::Console::Render
 
         using u32 = uint32_t;
         using u32x2 = vec2<u32>;
+        using u32x4 = vec4<u32>;
 
         using i32 = int32_t;
 
@@ -557,7 +558,7 @@ namespace Microsoft::Console::Render
             //   padding so that it is {u32; u32; u32; <4 byte padding>; u32x2}.
             // * bool will probably not work the way you want it to,
             //   because HLSL uses 32-bit bools and C++ doesn't.
-            alignas(sizeof(f32x4)) f32x4 viewport;
+            alignas(sizeof(u32x4)) u32x4 viewport;
             alignas(sizeof(f32x4)) f32 gammaRatios[4]{};
             alignas(sizeof(f32)) f32 enhancedContrast = 0;
             alignas(sizeof(u32)) u32 cellCountX = 0;
@@ -667,8 +668,8 @@ namespace Microsoft::Console::Render
             wil::com_ptr<IDXGISwapChain1> swapChain;
             wil::unique_handle frameLatencyWaitableObject;
             wil::com_ptr<ID3D11RenderTargetView> renderTargetView;
-            wil::com_ptr<ID3D11VertexShader> vertexShader;
-            wil::com_ptr<ID3D11PixelShader> pixelShader;
+            wil::com_ptr<ID3D11UnorderedAccessView> renderTargetUAV;
+            wil::com_ptr<ID3D11ComputeShader> computeShader;
             wil::com_ptr<ID3D11Buffer> constantBuffer;
             wil::com_ptr<ID3D11Buffer> cellBuffer;
             wil::com_ptr<ID3D11ShaderResourceView> cellView;
@@ -687,6 +688,7 @@ namespace Microsoft::Console::Render
             f32x2 cellSizeDIP; // invalidated by ApiInvalidations::Font, caches _api.cellSize but in DIP
             u16x2 cellSize; // invalidated by ApiInvalidations::Font, caches _api.cellSize
             u16x2 cellCount; // invalidated by ApiInvalidations::Font|Size, caches _api.cellCount
+            u16x2 renderTargetSize;
             u16 underlinePos = 0;
             u16 strikethroughPos = 0;
             u16 lineThickness = 0;
@@ -705,6 +707,9 @@ namespace Microsoft::Console::Render
             u32 backgroundColor = 0xff000000;
             u32 selectionColor = 0x7fffffff;
 
+            til::rect presentRect;
+            til::rect scrollRect;
+            i16 scrollOffset = 0;
             CachedCursorOptions cursorOptions;
             RenderInvalidations invalidations = RenderInvalidations::None;
 

@@ -58,8 +58,8 @@ try
 
     // After Present calls, the back buffer needs to explicitly be
     // re-bound to the D3D11 immediate context before it can be used again.
-    _r.deviceContext->OMSetRenderTargets(1, _r.renderTargetView.addressof(), nullptr);
-    _r.deviceContext->Draw(3, 0);
+    _r.deviceContext->CSSetUnorderedAccessViews(0, 1, _r.renderTargetUAV.addressof(), nullptr);
+    _r.deviceContext->Dispatch((_r.renderTargetSize.x + 7) / 8, (_r.renderTargetSize.y + 7) / 8, 1);
 
     // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
     // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
@@ -70,17 +70,58 @@ try
     // > for SwapChains created with DXGI_SWAP_EFFECT_DISCARD or DXGI_SWAP_EFFECT_FLIP_DISCARD.
     // ---> No need to call IDXGISwapChain1::Present1.
     //      TODO: Would IDXGISwapChain1::Present1 and its dirty rects have benefits for remote desktop?
-    THROW_IF_FAILED(_r.swapChain->Present(1, 0));
+    if (!_r.presentRect)
+    {
+        THROW_IF_FAILED(_r.swapChain->Present(1, 0));
+    }
+    else
+    {
+        RECT scrollRect;
+        RECT* pScrollRect = nullptr;
+        POINT scrollOffset;
+        POINT* pScrollOffset = nullptr;
+
+        if (_r.scrollOffset)
+        {
+            if (_r.scrollOffset < 0)
+            {
+                scrollRect = { 0, 0, _r.cellCount.x, _r.presentRect.top };
+            }
+            else
+            {
+                scrollRect = { 0, _r.presentRect.bottom, _r.cellCount.x, _r.cellCount.y };
+            }
+
+            scrollOffset = POINT{ 0, _r.scrollOffset };
+
+            scrollRect.top *= _r.cellSize.y;
+            scrollRect.right *= _r.cellSize.x;
+            scrollRect.bottom *= _r.cellSize.y;
+
+            scrollOffset.y *= _r.cellSize.y;
+
+            pScrollRect = &scrollRect;
+            pScrollOffset = &scrollOffset;
+        }
+
+        _r.presentRect.top *= _r.cellSize.y;
+        _r.presentRect.right *= _r.cellSize.x;
+        _r.presentRect.bottom *= _r.cellSize.y;
+
+        DXGI_PRESENT_PARAMETERS params{};
+        params.DirtyRectsCount = 1;
+        params.pDirtyRects = reinterpret_cast<RECT*>(&_r.presentRect);
+        params.pScrollRect = pScrollRect;
+        params.pScrollOffset = pScrollOffset;
+        THROW_IF_FAILED(_r.swapChain->Present1(1, 0, &params));
+    }
 
     // On some GPUs with tile based deferred rendering (TBDR) architectures, binding
     // RenderTargets that already have contents in them (from previous rendering) incurs a
     // cost for having to copy the RenderTarget contents back into tile memory for rendering.
     //
     // On Windows 10 with DXGI_SWAP_EFFECT_FLIP_DISCARD we get this for free.
-    if (!_sr.isWindows10OrGreater)
-    {
-        _r.deviceContext->DiscardView(_r.renderTargetView.get());
-    }
+    _r.deviceContext->DiscardView(_r.renderTargetView.get());
 
     return S_OK;
 }
@@ -94,21 +135,10 @@ CATCH_RETURN()
 
 void AtlasEngine::_setShaderResources() const
 {
-    _r.deviceContext->VSSetShader(_r.vertexShader.get(), nullptr, 0);
-    _r.deviceContext->PSSetShader(_r.pixelShader.get(), nullptr, 0);
-
-    // Our vertex shader uses a trick from Bill Bilodeau published in
-    // "Vertex Shader Tricks" at GDC14 to draw a fullscreen triangle
-    // without vertex/index buffers. This prepares our context for this.
-    _r.deviceContext->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
-    _r.deviceContext->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-    _r.deviceContext->IASetInputLayout(nullptr);
-    _r.deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    _r.deviceContext->PSSetConstantBuffers(0, 1, _r.constantBuffer.addressof());
-
+    _r.deviceContext->CSSetShader(_r.computeShader.get(), nullptr, 0);
+    _r.deviceContext->CSSetConstantBuffers(0, 1, _r.constantBuffer.addressof());
     const std::array resources{ _r.cellView.get(), _r.atlasView.get() };
-    _r.deviceContext->PSSetShaderResources(0, gsl::narrow_cast<UINT>(resources.size()), resources.data());
+    _r.deviceContext->CSSetShaderResources(0, gsl::narrow_cast<UINT>(resources.size()), resources.data());
 }
 
 void AtlasEngine::_updateConstantBuffer() const noexcept
@@ -118,8 +148,8 @@ void AtlasEngine::_updateConstantBuffer() const noexcept
     ConstBuffer data;
     data.viewport.x = 0;
     data.viewport.y = 0;
-    data.viewport.z = static_cast<float>(_r.cellCount.x * _r.cellSize.x);
-    data.viewport.w = static_cast<float>(_r.cellCount.y * _r.cellSize.y);
+    data.viewport.z = _r.cellCount.x * _r.cellSize.x;
+    data.viewport.w = _r.cellCount.y * _r.cellSize.y;
     DWrite_GetGammaRatios(_r.gamma, data.gammaRatios);
     data.enhancedContrast = useClearType ? _r.cleartypeEnhancedContrast : _r.grayscaleEnhancedContrast;
     data.cellCountX = _r.cellCount.x;

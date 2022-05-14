@@ -291,23 +291,22 @@ try
                 return blob;
             };
 
-            const auto vs = compile(_sr.sourceDirectory / L"shader_vs.hlsl", "vs_4_1");
-            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "ps_4_1");
+            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "cs_4_1");
 
-            THROW_IF_FAILED(_r.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, _r.vertexShader.put()));
-            THROW_IF_FAILED(_r.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.pixelShader.put()));
+            THROW_IF_FAILED(_r.device->CreateComputeShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.computeShader.put()));
             _setShaderResources();
         }
         CATCH_LOG()
     }
 #endif
 
-    if (_api.invalidatedRows == invalidatedRowsAll)
+    if (_api.invalidatedRows == invalidatedRowsAll || abs(_api.scrollOffset) >= _api.cellCount.y)
     {
         // Skip all the partial updates, since we redraw everything anyways.
         _api.invalidatedCursorArea = invalidatedAreaNone;
         _api.invalidatedRows = { 0, _api.cellCount.y };
         _api.scrollOffset = 0;
+        _r.presentRect = {};
     }
     else
     {
@@ -321,10 +320,6 @@ try
         {
             _api.invalidatedRows.x = std::min(_api.invalidatedRows.x, _api.cellCount.y);
             _api.invalidatedRows.y = clamp(_api.invalidatedRows.y, _api.invalidatedRows.x, _api.cellCount.y);
-        }
-        {
-            const auto limit = gsl::narrow_cast<i16>(_api.cellCount.y & 0x7fff);
-            _api.scrollOffset = gsl::narrow_cast<i16>(clamp<int>(_api.scrollOffset, -limit, limit));
         }
 
         // Scroll the buffer by the given offset and mark the newly uncovered rows as "invalid".
@@ -363,6 +358,20 @@ try
 
             memmove(dst, src, count * sizeof(Cell));
         }
+
+        _r.presentRect = {
+            0,
+            _api.invalidatedRows.x,
+            _api.cellCount.x,
+            _api.invalidatedRows.y,
+        };
+        _r.presentRect |= til::rect{
+            _api.invalidatedCursorArea.left,
+            _api.invalidatedCursorArea.top,
+            _api.invalidatedCursorArea.right,
+            _api.invalidatedCursorArea.bottom,
+        };
+        _r.scrollOffset = _api.scrollOffset;
     }
 
     _api.dirtyRect = til::rect{
@@ -689,8 +698,6 @@ void AtlasEngine::_createResources()
         };
         static constexpr std::array featureLevels{
             D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
         };
 
         auto hr = S_OK;
@@ -738,8 +745,7 @@ void AtlasEngine::_createResources()
         THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.constantBuffer.put()));
     }
 
-    THROW_IF_FAILED(_r.device->CreateVertexShader(&shader_vs[0], sizeof(shader_vs), nullptr, _r.vertexShader.put()));
-    THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_ps[0], sizeof(shader_ps), nullptr, _r.pixelShader.put()));
+    THROW_IF_FAILED(_r.device->CreateComputeShader(&shader_ps[0], sizeof(shader_ps), nullptr, _r.computeShader.put()));
 
     WI_ClearFlag(_api.invalidations, ApiInvalidations::Device);
     WI_SetAllFlags(_api.invalidations, ApiInvalidations::SwapChain);
@@ -776,10 +782,10 @@ void AtlasEngine::_createSwapChain()
         desc.Height = _api.sizeInPixel.y;
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc.Count = 1;
-        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS;
         desc.BufferCount = 2; // TODO: 3?
         desc.Scaling = DXGI_SCALING_NONE;
-        desc.SwapEffect = _sr.isWindows10OrGreater ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        desc.SwapEffect = _sr.isWindows10OrGreater ? DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         // * HWND swap chains can't do alpha.
         // * If our background is opaque we can enable "independent" flips by setting DXGI_SWAP_EFFECT_FLIP_DISCARD and DXGI_ALPHA_MODE_IGNORE.
         //   As our swap chain won't have to compose with DWM anymore it reduces the display latency dramatically.
@@ -817,7 +823,6 @@ void AtlasEngine::_createSwapChain()
         if (supportsFrameLatencyWaitableObject)
         {
             const auto swapChain2 = _r.swapChain.query<IDXGISwapChain2>();
-            THROW_IF_FAILED(swapChain2->SetMaximumFrameLatency(1)); // TODO: 2?
             _r.frameLatencyWaitableObject.reset(swapChain2->GetFrameLatencyWaitableObject());
             THROW_LAST_ERROR_IF(!_r.frameLatencyWaitableObject);
         }
@@ -859,7 +864,9 @@ void AtlasEngine::_recreateSizeDependentResources()
     {
         wil::com_ptr<ID3D11Texture2D> buffer;
         THROW_IF_FAILED(_r.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), buffer.put_void()));
+
         THROW_IF_FAILED(_r.device->CreateRenderTargetView(buffer.get(), nullptr, _r.renderTargetView.put()));
+        THROW_IF_FAILED(_r.device->CreateUnorderedAccessView(buffer.get(), nullptr, _r.renderTargetUAV.put()));
     }
 
     // Tell D3D which parts of the render target will be visible.
@@ -872,6 +879,7 @@ void AtlasEngine::_recreateSizeDependentResources()
         viewport.Width = static_cast<float>(_api.sizeInPixel.x);
         viewport.Height = static_cast<float>(_api.sizeInPixel.y);
         _r.deviceContext->RSSetViewports(1, &viewport);
+        _r.renderTargetSize = _api.sizeInPixel;
     }
 
     if (_api.cellCount != _r.cellCount)

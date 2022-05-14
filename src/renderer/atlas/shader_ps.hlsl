@@ -38,7 +38,7 @@ struct Cell
 
 cbuffer ConstBuffer : register(b0)
 {
-    float4 viewport;
+    uint4 viewport;
     float4 gammaRatios;
     float enhancedContrast;
     uint cellCountX;
@@ -52,6 +52,7 @@ cbuffer ConstBuffer : register(b0)
 };
 StructuredBuffer<Cell> cells : register(t0);
 Texture2D<float4> glyphs : register(t1);
+RWTexture2D<float4> output : register(u0);
 
 float4 decodeRGBA(uint i)
 {
@@ -73,14 +74,16 @@ float4 alphaBlendPremultiplied(float4 bottom, float4 top)
 }
 
 // clang-format off
-float4 main(float4 pos: SV_Position): SV_Target
+[numthreads(8, 8, 1)]
+void main(uint3 pos: SV_DispatchThreadID)
 // clang-format on
 {
     // We need to fill the entire render target with pixels, but only our "viewport"
     // has cells we want to draw. The rest gets treated with the background color.
     [branch] if (any(pos.xy < viewport.xy || pos.xy >= viewport.zw))
     {
-        return decodeRGBA(backgroundColor);
+        output[pos.xy] = decodeRGBA(backgroundColor);
+        return;
     }
 
     uint2 viewportPos = pos.xy - viewport.xy;
@@ -178,5 +181,5 @@ float4 main(float4 pos: SV_Position): SV_Target
         color = alphaBlendPremultiplied(color, decodeRGBA(selectionColor));
     }
 
-    return color;
+    output[pos.xy] = color;
 }
