@@ -13,10 +13,10 @@ using namespace Microsoft::Console::Render;
 
 // This is an excerpt of GDI's FontHasWesternScript() as
 // used by InternalTextOut() which is part of ExtTextOutW().
-bool GdiEngine::FontHasWesternScript(HDC hdc)
+bool GdiEngine::FontHasWesternScript(HDC hdc) noexcept
 {
     WORD glyphs[4];
-    return (GetGlyphIndicesW(hdc, L"dMr\"", 4, glyphs, GGI_MARK_NONEXISTING_GLYPHS) == 4) &&
+    return (GetGlyphIndicesW(hdc, L"dMr\"", 4, &glyphs[0], GGI_MARK_NONEXISTING_GLYPHS) == 4) &&
            (glyphs[0] != 0xFFFF && glyphs[1] != 0xFFFF && glyphs[2] != 0xFFFF && glyphs[3] != 0xFFFF);
 }
 
@@ -122,8 +122,8 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
     szGutter.cy = _szMemorySurface.cy % coordFontSize.Y;
 
     RECT rcScrollLimit;
-    RETURN_IF_FAILED(LongSub(_szMemorySurface.cx, szGutter.cx, &rcScrollLimit.right));
-    RETURN_IF_FAILED(LongSub(_szMemorySurface.cy, szGutter.cy, &rcScrollLimit.bottom));
+    rcScrollLimit.right = _szMemorySurface.cx - szGutter.cx;
+    rcScrollLimit.bottom = _szMemorySurface.cy - szGutter.cy;
 
     // Scroll real window and memory buffer in-sync.
     LOG_LAST_ERROR_IF(!ScrollWindowEx(_hwndTargetWindow,
@@ -135,8 +135,8 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
                                       nullptr,
                                       0));
 
-    til::rect rcUpdate;
-    LOG_HR_IF(E_FAIL, !(ScrollDC(_hdcMemoryContext, _szInvalidScroll.cx, _szInvalidScroll.cy, &rcScrollLimit, &rcScrollLimit, nullptr, rcUpdate.as_win32_rect())));
+    const til::rect rcUpdate;
+    //LOG_HR_IF(E_FAIL, !(ScrollDC(_hdcMemoryContext, _szInvalidScroll.cx, _szInvalidScroll.cy, &rcScrollLimit, &rcScrollLimit, nullptr, rcUpdate.as_win32_rect())));
 
     LOG_IF_FAILED(_InvalidCombine(&rcUpdate));
 
@@ -162,8 +162,8 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
     // Only do work if the existing memory surface is a different size from the client area.
     // Return quickly if they're the same.
     RETURN_HR_IF(S_OK, _szMemorySurface.cx == szClient.cx && _szMemorySurface.cy == szClient.cy);
-
-    wil::unique_hdc hdcRealWindow(GetDC(_hwndTargetWindow));
+    
+    wil::shared_hdc hdcRealWindow(GetDC(_hwndTargetWindow));
     RETURN_HR_IF_NULL(E_FAIL, hdcRealWindow.get());
 
     // If we already had a bitmap, Blt the old one onto the new one and clean up the old one.
@@ -336,7 +336,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
 
         const auto ptDraw = coord * _GetFontSize();
 
-        const auto pPolyTextLine = &_pPolyText[_cPolyText];
+        const auto pPolyTextLine = &til::at(_pPolyText, _cPolyText);
 
         auto& polyString = _polyStrings.emplace_back();
         polyString.reserve(cchLine);
@@ -372,15 +372,16 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
             // dispatch conversion into our codepage
 
             // Find out the bytes required
-            const auto cbRequired = WideCharToMultiByte(_fontCodepage, 0, polyString.data(), (int)cchLine, nullptr, 0, nullptr, nullptr);
+            const auto cbRequired = WideCharToMultiByte(_fontCodepage, 0, polyString.data(), gsl::narrow<int>(cchLine), nullptr, 0, nullptr, nullptr);
 
             if (cbRequired != 0)
             {
                 // Allocate buffer for MultiByte
-                auto psConverted = std::make_unique<char[]>(cbRequired);
+#pragma warning(suppress : 26414) // Move, copy, reassign or reset a local smart pointer 'psConverted' (r.5).
+                const auto psConverted = std::make_unique<char[]>(cbRequired);
 
                 // Attempt conversion to current codepage
-                const auto cbConverted = WideCharToMultiByte(_fontCodepage, 0, polyString.data(), (int)cchLine, psConverted.get(), cbRequired, nullptr, nullptr);
+                const auto cbConverted = WideCharToMultiByte(_fontCodepage, 0, polyString.data(), gsl::narrow<int>(cchLine), psConverted.get(), cbRequired, nullptr, nullptr);
 
                 // If successful...
                 if (cbConverted != 0)
@@ -418,7 +419,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
         pPolyTextLine->uiFlags = ETO_OPAQUE | ETO_CLIPPED;
         pPolyTextLine->rcl.left = pPolyTextLine->x;
         pPolyTextLine->rcl.top = pPolyTextLine->y + topOffset;
-        pPolyTextLine->rcl.right = pPolyTextLine->rcl.left + (til::CoordType)cchCharWidths;
+        pPolyTextLine->rcl.right = pPolyTextLine->rcl.left + gsl::narrow_cast<LONG>(cchCharWidths);
         pPolyTextLine->rcl.bottom = pPolyTextLine->y + coordFontSize.Y - bottomOffset;
         pPolyTextLine->pdx = polyWidth.data();
 
@@ -454,7 +455,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
     {
         for (size_t i = 0; i != _cPolyText; ++i)
         {
-            const auto& t = _pPolyText[i];
+            const auto& t = til::at(_pPolyText, i);
 
             // The following if/else replicates the essentials of how ExtTextOutW() without ETO_IGNORELANGUAGE works.
             // See InternalTextOut().
@@ -497,7 +498,7 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
         _polyStrings.clear();
         _polyWidths.clear();
 
-        ZeroMemory(_pPolyText, sizeof(_pPolyText));
+        ZeroMemory(&_pPolyText[0], sizeof(_pPolyText));
 
         _cPolyText = 0;
     }
@@ -529,14 +530,14 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
     hbr.release(); // If SelectBrush was successful, GDI owns the brush. Release for now.
 
     // On exit, be sure we try to put the brush back how it was originally.
-    auto restoreBrushOnExit = wil::scope_exit([&] { hbr.reset(SelectBrush(_hdcMemoryContext, hbrPrev.get())); });
+    auto restoreBrushOnExit = wil::scope_exit([&]() noexcept { hbr.reset(SelectBrush(_hdcMemoryContext, hbrPrev.get())); });
 
     // Get the font size so we know the size of the rectangle lines we'll be inscribing.
     const auto fontWidth = _GetFontSize().X;
     const auto fontHeight = _GetFontSize().Y;
     const auto widthOfAllCells = fontWidth * gsl::narrow_cast<unsigned>(cchLine);
 
-    const auto DrawLine = [=](const auto x, const auto y, const auto w, const auto h) {
+    const auto DrawLine = [=](const auto x, const auto y, const auto w, const auto h) noexcept {
         return PatBlt(_hdcMemoryContext, x, y, w, h, PATCOPY);
     };
 
@@ -667,8 +668,9 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
 
     case CursorType::DoubleUnderscore:
     {
-        RECT top, bottom;
-        top = bottom = rcBoundaries;
+        auto top = rcBoundaries;
+        auto bottom = rcBoundaries;
+
         bottom.top = bottom.bottom + -1;
         top.top = top.bottom + -3;
         top.bottom = top.top + 1;
@@ -680,8 +682,11 @@ bool GdiEngine::FontHasWesternScript(HDC hdc)
 
     case CursorType::EmptyBox:
     {
-        RECT top, left, right, bottom;
-        top = left = right = bottom = rcBoundaries;
+        auto top = rcBoundaries;
+        auto left = rcBoundaries;
+        auto right = rcBoundaries;
+        auto bottom = rcBoundaries;
+
         top.bottom = top.top + 1;
         bottom.top = bottom.bottom + -1;
         left.right = left.left + 1;

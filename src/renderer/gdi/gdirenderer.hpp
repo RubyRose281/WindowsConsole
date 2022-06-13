@@ -25,7 +25,7 @@ namespace Microsoft::Console::Render
         GdiEngine();
         ~GdiEngine() override;
 
-        [[nodiscard]] HRESULT SetHwnd(const HWND hwnd) noexcept;
+        [[nodiscard]] HRESULT SetHwnd(const HWND hwnd) noexcept override;
 
         [[nodiscard]] HRESULT InvalidateSelection(const std::vector<til::rect>& rectangles) noexcept override;
         [[nodiscard]] HRESULT InvalidateScroll(const til::point* const pcoordDelta) noexcept override;
@@ -90,7 +90,7 @@ namespace Microsoft::Console::Render
                                                             const int nIndex,
                                                             const LONG dwNewLong) noexcept;
 
-        static bool FontHasWesternScript(HDC hdc);
+        static bool FontHasWesternScript(HDC hdc) noexcept;
 
         bool _fPaintStarted;
 
@@ -104,7 +104,7 @@ namespace Microsoft::Console::Render
         TEXTMETRICW _tmFontMetrics;
         FontResource _softFont;
 
-        static const size_t s_cPolyTextCache = 80;
+        static constexpr size_t s_cPolyTextCache = 80;
         POLYTEXTW _pPolyText[s_cPolyTextCache];
         size_t _cPolyText;
         [[nodiscard]] HRESULT _FlushBufferLines() noexcept;
@@ -126,7 +126,7 @@ namespace Microsoft::Console::Render
         til::size _coordFontLast;
         int _iCurrentDpi;
 
-        static const int s_iBaseDpi = USER_DEFAULT_SCREEN_DPI;
+        static constexpr int s_iBaseDpi = USER_DEFAULT_SCREEN_DPI;
 
         til::size _szMemorySurface;
         HBITMAP _hbitmapMemorySurface;
@@ -167,19 +167,19 @@ namespace Microsoft::Console::Render
 
         [[nodiscard]] HRESULT _PaintBackgroundColor(const RECT* const prc) noexcept;
 
-        static const ULONG s_ulMinCursorHeightPercent = 25;
-        static const ULONG s_ulMaxCursorHeightPercent = 100;
+        static constexpr ULONG s_ulMinCursorHeightPercent = 25;
+        static constexpr ULONG s_ulMaxCursorHeightPercent = 100;
 
-        static int s_ScaleByDpi(const int iPx, const int iDpi);
-        static int s_ShrinkByDpi(const int iPx, const int iDpi);
+        static int s_ScaleByDpi(const int iPx, const int iDpi) noexcept;
+        static int s_ShrinkByDpi(const int iPx, const int iDpi) noexcept;
 
-        til::point _GetInvalidRectPoint() const;
-        til::size _GetInvalidRectSize() const;
-        til::size _GetRectSize(const RECT* const pRect) const;
+        til::point _GetInvalidRectPoint() const noexcept;
+        til::size _GetInvalidRectSize() const noexcept;
+        til::size _GetRectSize(const RECT* const pRect) const noexcept;
 
-        void _OrRect(_In_ til::rect* const pRectExisting, const til::rect* const pRectToOr) const;
+        void _OrRect(_In_ til::rect* const pRectExisting, const til::rect* const pRectToOr) const noexcept;
 
-        bool _IsFontTrueType() const;
+        bool _IsFontTrueType() const noexcept;
 
         [[nodiscard]] HRESULT _GetProposedFont(const FontInfoDesired& FontDesired,
                                                _Out_ FontInfo& Font,
@@ -187,9 +187,9 @@ namespace Microsoft::Console::Render
                                                _Inout_ wil::unique_hfont& hFont,
                                                _Inout_ wil::unique_hfont& hFontItalic) noexcept;
 
-        til::size _GetFontSize() const;
-        bool _IsMinimized() const;
-        bool _IsWindowValid() const;
+        til::size _GetFontSize() const noexcept;
+        bool _IsMinimized() const noexcept;
+        bool _IsWindowValid() const noexcept;
 
 #ifdef DBG
         // Helper functions to diagnose issues with painting from the in-memory buffer.

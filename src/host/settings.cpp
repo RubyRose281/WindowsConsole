@@ -73,7 +73,7 @@ Settings::Settings() :
     _dwFontSize.Y = 16;
 
     ZeroMemory((void*)&_FaceName, sizeof(_FaceName));
-    wcscpy_s(_FaceName, DEFAULT_TT_FONT_FACENAME);
+    wcscpy_s(_FaceName, L"__DefaultTTFont__");
 
     _CursorType = CursorType::Legacy;
 }

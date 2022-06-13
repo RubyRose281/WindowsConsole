@@ -24,11 +24,11 @@ namespace Microsoft::Console::Render
         FontResource(const gsl::span<const uint16_t> bitPattern,
                      const til::size sourceSize,
                      const til::size targetSize,
-                     const size_t centeringHint);
+                     const size_t centeringHint) noexcept;
         FontResource() = default;
         ~FontResource() = default;
         FontResource& operator=(FontResource&&) = default;
-        void SetTargetSize(const til::size targetSize);
+        void SetTargetSize(const til::size targetSize) noexcept;
         operator HFONT();
 
     private:

@@ -79,7 +79,7 @@ namespace
 FontResource::FontResource(const gsl::span<const uint16_t> bitPattern,
                            const til::size sourceSize,
                            const til::size targetSize,
-                           const size_t centeringHint) :
+                           const size_t centeringHint) noexcept :
     _bitPattern{ bitPattern.begin(), bitPattern.end() },
     _sourceSize{ sourceSize },
     _targetSize{ targetSize },
@@ -87,7 +87,7 @@ FontResource::FontResource(const gsl::span<const uint16_t> bitPattern,
 {
 }
 
-void FontResource::SetTargetSize(const til::size targetSize)
+void FontResource::SetTargetSize(const til::size targetSize) noexcept
 {
     if (_targetSize != targetSize)
     {

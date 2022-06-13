@@ -30,7 +30,7 @@ typedef _Return_type_success_(return >= 0) long NTSTATUS;
 //#include <ntstatus.h>
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L) // ntsubauth
 #define FACILITY_NTWIN32 0x7
-__inline int NTSTATUS_FROM_WIN32(long x)
+constexpr NTSTATUS NTSTATUS_FROM_WIN32(long x) noexcept
 {
     return x <= 0 ? (NTSTATUS)x : (NTSTATUS)(((x)&0x0000FFFF) | (FACILITY_NTWIN32 << 16) | ERROR_SEVERITY_ERROR);
 }

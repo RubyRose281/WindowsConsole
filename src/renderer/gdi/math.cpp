@@ -35,6 +35,8 @@ using namespace Microsoft::Console::Render;
 // - S_OK
 [[nodiscard]] HRESULT GdiEngine::IsGlyphWideByFont(const std::wstring_view glyph, _Out_ bool* const pResult) noexcept
 {
+    __assume(pResult != nullptr);
+
     auto isFullWidth = false;
 
     if (glyph.size() == 1)
@@ -77,7 +79,7 @@ using namespace Microsoft::Console::Render;
 // - iDpi - Given DPI scalar value
 // Return Value:
 // - Pixel measurement scaled against the given DPI scalar.
-int GdiEngine::s_ScaleByDpi(const int iPx, const int iDpi)
+int GdiEngine::s_ScaleByDpi(const int iPx, const int iDpi) noexcept
 {
     return MulDiv(iPx, iDpi, s_iBaseDpi);
 }
@@ -89,7 +91,7 @@ int GdiEngine::s_ScaleByDpi(const int iPx, const int iDpi)
 // - iDpi - Given DPI for pixel scaling
 // Return Value:
 // - Pixel length measurement.
-int GdiEngine::s_ShrinkByDpi(const int iPx, const int iDpi)
+int GdiEngine::s_ShrinkByDpi(const int iPx, const int iDpi) noexcept
 {
     return MulDiv(iPx, s_iBaseDpi, iDpi);
 }
@@ -100,7 +102,7 @@ int GdiEngine::s_ShrinkByDpi(const int iPx, const int iDpi)
 // - <none>
 // Return Value:
 // - Top left corner in pixels of where to start repainting the frame.
-til::point GdiEngine::_GetInvalidRectPoint() const
+til::point GdiEngine::_GetInvalidRectPoint() const noexcept
 {
     til::point pt;
     pt.x = _psInvalidData.rcPaint.left;
@@ -115,7 +117,7 @@ til::point GdiEngine::_GetInvalidRectPoint() const
 // - <none>
 // Return Value:
 // - Width and height in pixels of the invalid area of the frame.
-til::size GdiEngine::_GetInvalidRectSize() const
+til::size GdiEngine::_GetInvalidRectSize() const noexcept
 {
     return _GetRectSize(&_psInvalidData.rcPaint);
 }
@@ -126,7 +128,7 @@ til::size GdiEngine::_GetInvalidRectSize() const
 // - Pixel region (til::rect)
 // Return Value:
 // - Pixel dimensions (til::size)
-til::size GdiEngine::_GetRectSize(const RECT* const pRect) const
+til::size GdiEngine::_GetRectSize(const RECT* const pRect) const noexcept
 {
     til::size sz;
     sz.cx = pRect->right - pRect->left;
@@ -143,7 +145,7 @@ til::size GdiEngine::_GetRectSize(const RECT* const pRect) const
 // - pRectToOr - Add this rectangle to the existing one.
 // Return Value:
 // - <none>
-void GdiEngine::_OrRect(_In_ til::rect* pRectExisting, const til::rect* pRectToOr) const
+void GdiEngine::_OrRect(_In_ til::rect* pRectExisting, const til::rect* pRectToOr) const noexcept
 {
     pRectExisting->left = std::min(pRectExisting->left, pRectToOr->left);
     pRectExisting->top = std::min(pRectExisting->top, pRectToOr->top);

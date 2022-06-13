@@ -18,8 +18,9 @@ using namespace Microsoft::Console::Render;
 // - <none>
 // Return Value:
 // - An instance of a Renderer.
+#pragma warning(suppress : 26455) // Default constructor should not throw. Declare it 'noexcept' (f.6).
 GdiEngine::GdiEngine() :
-    _hwndTargetWindow((HWND)INVALID_HANDLE_VALUE),
+    _hwndTargetWindow(static_cast<HWND>(INVALID_HANDLE_VALUE)),
 #if DBG
     _debugWindow((HWND)INVALID_HANDLE_VALUE),
 #endif
@@ -40,7 +41,7 @@ GdiEngine::GdiEngine() :
     _polyStrings{ &_pool },
     _polyWidths{ &_pool }
 {
-    ZeroMemory(_pPolyText, sizeof(POLYTEXTW) * s_cPolyTextCache);
+    ZeroMemory(&_pPolyText[0], sizeof(_pPolyText));
 
     _hdcMemoryContext = CreateCompatibleDC(nullptr);
     THROW_HR_IF_NULL(E_FAIL, _hdcMemoryContext);
@@ -74,16 +75,9 @@ GdiEngine::GdiEngine() :
 // - <none>
 // Return Value:
 // - <none>
+#pragma warning(suppress : 26432) // If you define or delete any default operation in the type '...', define or delete them all (c.21).
 GdiEngine::~GdiEngine()
 {
-    for (size_t iPoly = 0; iPoly < _cPolyText; iPoly++)
-    {
-        if (_pPolyText[iPoly].lpstr != nullptr)
-        {
-            delete[] _pPolyText[iPoly].lpstr;
-        }
-    }
-
     if (_hbitmapMemorySurface != nullptr)
     {
         LOG_HR_IF(E_FAIL, !(DeleteObject(_hbitmapMemorySurface)));
@@ -268,6 +262,7 @@ GdiEngine::~GdiEngine()
                                                       const gsl::not_null<IRenderData*> /*pData*/,
                                                       const bool usingSoftFont,
                                                       const bool isSettingDefaultBrushes) noexcept
+try
 {
     RETURN_IF_FAILED(_FlushBufferLines());
 
@@ -322,6 +317,7 @@ GdiEngine::~GdiEngine()
 
     return S_OK;
 }
+CATCH_LOG()
 
 // Routine Description:
 // - This method will update the active font on the current device context
@@ -510,7 +506,7 @@ GdiEngine::~GdiEngine()
 [[nodiscard]] HRESULT GdiEngine::_DoUpdateTitle(_In_ const std::wstring_view /*newTitle*/) noexcept
 {
     // the CM_UPDATE_TITLE handler in windowproc will query the updated title.
-    return PostMessageW(_hwndTargetWindow, CM_UPDATE_TITLE, 0, (LPARAM) nullptr) ? S_OK : E_FAIL;
+    return PostMessageW(_hwndTargetWindow, CM_UPDATE_TITLE, 0, 0) ? S_OK : E_FAIL;
 }
 
 // Routine Description:
@@ -546,8 +542,8 @@ GdiEngine::~GdiEngine()
         // We do this because, for instance, if we ask GDI for an 8x12 OEM_FIXED_FONT,
         // it may very well decide to choose Courier New instead of the Terminal raster.
 #pragma prefast(suppress : 38037, "raster fonts get special handling, we need to get it this way")
-        hFont.reset((HFONT)GetStockObject(OEM_FIXED_FONT));
-        hFontItalic.reset((HFONT)GetStockObject(OEM_FIXED_FONT));
+        hFont.reset(static_cast<HFONT>(GetStockObject(OEM_FIXED_FONT)));
+        hFontItalic.reset(static_cast<HFONT>(GetStockObject(OEM_FIXED_FONT)));
     }
     else
     {
@@ -587,14 +583,14 @@ GdiEngine::~GdiEngine()
         else
         {
             CHARSETINFO csi;
-            if (!TranslateCharsetInfo((DWORD*)IntToPtr(FontDesired.GetCodePage()), &csi, TCI_SRCCODEPAGE))
+            if (!TranslateCharsetInfo(static_cast<DWORD*>(IntToPtr(FontDesired.GetCodePage())), &csi, TCI_SRCCODEPAGE))
             {
                 // if we failed to translate from codepage to charset, choose our charset depending on what kind of font we're
                 // dealing with. Raster Fonts need to be presented with the OEM charset, while TT fonts need to be ANSI.
                 csi.ciCharset = FontDesired.IsTrueTypeFont() ? ANSI_CHARSET : OEM_CHARSET;
             }
 
-            lf.lfCharSet = (BYTE)csi.ciCharset;
+            lf.lfCharSet = gsl::narrow_cast<BYTE>(csi.ciCharset);
         }
 
         lf.lfQuality = DRAFT_QUALITY;
@@ -696,7 +692,7 @@ GdiEngine::~GdiEngine()
 // - <none>
 // Return Value:
 // - X by Y size of the font.
-til::size GdiEngine::_GetFontSize() const
+til::size GdiEngine::_GetFontSize() const noexcept
 {
     return _coordFontLast;
 }
@@ -707,7 +703,7 @@ til::size GdiEngine::_GetFontSize() const
 // - <none>
 // Return Value:
 // - True if minimized (don't need to draw anything). False otherwise.
-bool GdiEngine::_IsMinimized() const
+bool GdiEngine::_IsMinimized() const noexcept
 {
     return !!IsIconic(_hwndTargetWindow);
 }
@@ -719,7 +715,7 @@ bool GdiEngine::_IsMinimized() const
 // - <none>
 // Return Value:
 // - True if TrueType. False otherwise (and generally assumed to be raster font type.)
-bool GdiEngine::_IsFontTrueType() const
+bool GdiEngine::_IsFontTrueType() const noexcept
 {
     return !!(_tmFontMetrics.tmPitchAndFamily & TMPF_TRUETYPE);
 }
@@ -730,7 +726,7 @@ bool GdiEngine::_IsFontTrueType() const
 // Return Value:
 // - True if it is valid.
 // - False if it is known invalid.
-bool GdiEngine::_IsWindowValid() const
+bool GdiEngine::_IsWindowValid() const noexcept
 {
     return _hwndTargetWindow != INVALID_HANDLE_VALUE &&
            _hwndTargetWindow != nullptr;

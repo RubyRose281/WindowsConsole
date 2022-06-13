@@ -30,6 +30,8 @@ HRESULT GdiEngine::InvalidateSystem(const til::rect* const prcDirtyClient) noexc
 // - HRESULT S_OK, GDI-based error code, or safemath error
 HRESULT GdiEngine::InvalidateScroll(const til::point* const pcoordDelta) noexcept
 {
+    __assume(pcoordDelta != nullptr);
+
     if (pcoordDelta->X != 0 || pcoordDelta->Y != 0)
     {
         const auto ptDelta = *pcoordDelta * _GetFontSize();
@@ -65,6 +67,8 @@ HRESULT GdiEngine::InvalidateSelection(const std::vector<til::rect>& rectangles)
 // - S_OK, GDI related failure, or safemath failure.
 HRESULT GdiEngine::Invalidate(const til::rect* const psrRegion) noexcept
 {
+    __assume(psrRegion != nullptr);
+
     const auto rcRegion = psrRegion->scale_up(_GetFontSize());
     RETURN_HR(_InvalidateRect(&rcRegion));
 }
@@ -111,6 +115,7 @@ HRESULT GdiEngine::InvalidateAll() noexcept
 // - S_FALSE - we succeeded, but the result was false.
 HRESULT GdiEngine::PrepareForTeardown(_Out_ bool* const pForcePaint) noexcept
 {
+    __assume(pForcePaint != nullptr);
     *pForcePaint = false;
     return S_FALSE;
 }
