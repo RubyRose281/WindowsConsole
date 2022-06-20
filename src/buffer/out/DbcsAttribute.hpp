@@ -16,7 +16,7 @@ Revision History:
 
 #pragma once
 
-class DbcsAttribute final
+class DbcsAttribute
 {
 public:
     enum class Attribute : BYTE
@@ -26,15 +26,13 @@ public:
         Trailing = 0x02
     };
 
-    DbcsAttribute() noexcept :
-        _attribute{ Attribute::Single },
-        _glyphStored{ false }
+    constexpr DbcsAttribute() noexcept :
+        _attribute{ Attribute::Single }
     {
     }
 
-    DbcsAttribute(const Attribute attribute) noexcept :
-        _attribute{ attribute },
-        _glyphStored{ false }
+    constexpr DbcsAttribute(const Attribute attribute) noexcept :
+        _attribute{ attribute }
     {
     }
 
@@ -58,16 +56,6 @@ public:
         return IsLeading() || IsTrailing();
     }
 
-    constexpr bool IsGlyphStored() const noexcept
-    {
-        return _glyphStored;
-    }
-
-    void SetGlyphStored(const bool stored) noexcept
-    {
-        _glyphStored = stored;
-    }
-
     void SetSingle() noexcept
     {
         _attribute = Attribute::Single;
@@ -86,7 +74,6 @@ public:
     void Reset() noexcept
     {
         SetSingle();
-        SetGlyphStored(false);
     }
 
     WORD GeneratePublicApiAttributeFormat() const noexcept
@@ -126,8 +113,7 @@ public:
     friend constexpr bool operator==(const DbcsAttribute& a, const DbcsAttribute& b) noexcept;
 
 private:
-    Attribute _attribute : 2;
-    bool _glyphStored : 1;
+    Attribute _attribute;
 
 #ifdef UNIT_TESTING
     friend class TextBufferTests;
@@ -138,7 +124,3 @@ constexpr bool operator==(const DbcsAttribute& a, const DbcsAttribute& b) noexce
 {
     return a._attribute == b._attribute;
 }
-
-static_assert(sizeof(DbcsAttribute) == sizeof(BYTE), "DbcsAttribute should be one byte big. if this changes then it needs "
-                                                     "either an implicit conversion to a BYTE or an update to all places "
-                                                     "that assume it's a byte big");

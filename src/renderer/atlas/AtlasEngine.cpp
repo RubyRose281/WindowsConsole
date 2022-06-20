@@ -1202,7 +1202,7 @@ void AtlasEngine::_flushBufferLine()
                 // Task: Replace all characters in this range with unicode replacement characters.
                 // Input (where "n" is a narrow and "ww" is a wide character):
                 //    _api.bufferLine       = "nwwnnw"
-                //    _api.bufferLineColumn = {0, 1, 1, 2, 3, 4, 4, 5}
+                //    _api.bufferLineColumn = {0, 1, 1, 3, 4, 5, 5, 6}
                 //                             n  w  w  n  n  w  w
                 // Solution:
                 //   Iterate through bufferLineColumn until the value changes, because this indicates we passed over a
@@ -1367,8 +1367,10 @@ void AtlasEngine::_flushBufferLine()
                     {
                         if (_api.textProps[i].canBreakShapingAfter)
                         {
-                            _emplaceGlyph(mappedFontFace.get(), a.textPosition + beg, a.textPosition + i + 1);
-                            beg = i + 1;
+                            if (_emplaceGlyph(mappedFontFace.get(), a.textPosition + beg, a.textPosition + i + 1))
+                            {
+                                beg = i + 1;
+                            }
                         }
                     }
                 }
@@ -1377,7 +1379,7 @@ void AtlasEngine::_flushBufferLine()
     }
 }
 
-void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, size_t bufferPos2)
+bool AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, size_t bufferPos2)
 {
     static constexpr auto replacement = L'\uFFFD';
 
@@ -1391,7 +1393,10 @@ void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
     const auto x1 = _api.bufferLineColumn[bufferPos1];
     const auto x2 = _api.bufferLineColumn[bufferPos2];
 
-    Expects(x1 < x2 && x2 <= _api.cellCount.x);
+    if (x1 >= x2 || x2 > _api.cellCount.x)
+    {
+        return false;
+    }
 
     const u16 cellCount = x2 - x1;
 
@@ -1462,4 +1467,6 @@ void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
         data[i].flags = valueData->flags | _api.bufferLineMetadata[static_cast<size_t>(x1) + i].flags;
         data[i].color = _api.bufferLineMetadata[static_cast<size_t>(x1) + i].colors;
     }
+
+    return true;
 }

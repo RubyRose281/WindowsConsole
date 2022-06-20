@@ -553,8 +553,17 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             }
 
             // line was wrapped if we're writing up to the end of the current row
-            OutputCellIterator it(std::wstring_view(LocalBuffer, i), Attributes);
-            const auto itEnd = screenInfo.Write(it);
+            til::CoordType cellDistance;
+            if constexpr (Feature_UnicodeTextSegmentation::IsEnabled())
+            {
+                cellDistance = screenInfo.Write({LocalBuffer, gsl::narrow<size_t>(i)}, Attributes);
+            }
+            else
+            {
+                OutputCellIterator it(std::wstring_view(LocalBuffer, i), Attributes);
+                const auto itEnd = screenInfo.Write(it);
+                cellDistance = itEnd.GetCellDistance(it);
+            }
 
             // Notify accessibility
             if (screenInfo.HasAccessibilityEventing())
@@ -564,7 +573,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
 
             // The number of "spaces" or "cells" we have consumed needs to be reported and stored for later
             // when/if we need to erase the command line.
-            TempNumSpaces += itEnd.GetCellDistance(it);
+            TempNumSpaces += cellDistance;
             // WCL-NOTE: We are using the "estimated" X position delta instead of the actual delta from
             // WCL-NOTE: the iterator. It is not clear why. If they differ, the cursor ends up in the
             // WCL-NOTE: wrong place (typically inside another character).
@@ -859,12 +868,11 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             {
                 const auto TargetPoint = cursor.GetPosition();
                 auto& Row = textBuffer.GetRowByOffset(TargetPoint.Y);
-                const auto& charRow = Row.GetCharRow();
 
                 try
                 {
                     // If we're on top of a trailing cell, clear it and the previous cell.
-                    if (charRow.DbcsAttrAt(TargetPoint.X).IsTrailing())
+                    if (Row.DbcsAttrAt(TargetPoint.X).IsTrailing())
                     {
                         // Space to clear for 2 cells.
                         OutputCellIterator it(UNICODE_SPACE, 2);

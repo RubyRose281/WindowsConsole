@@ -15,8 +15,7 @@ Author(s):
 
 #pragma once
 
-#include "CharRow.hpp"
-#include "AttrRow.hpp"
+#include "Row.hpp"
 #include "OutputCellView.hpp"
 #include "../../types/inc/viewport.hpp"
 
@@ -54,10 +53,10 @@ protected:
     void _GenerateView();
     static const ROW* s_GetRow(const TextBuffer& buffer, const til::point pos) noexcept;
 
+    til::small_rle<TextAttribute, uint16_t, 1>::const_iterator _attrIter;
     OutputCellView _view;
 
     const ROW* _pRow;
-    ATTR_ROW::const_iterator _attrIter;
     const TextBuffer& _buffer;
     const Microsoft::Console::Types::Viewport _bounds;
     bool _exceeded;

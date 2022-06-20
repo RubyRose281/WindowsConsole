@@ -84,7 +84,7 @@
             <brandingToken>Dev</brandingToken>
         </alwaysEnabledBrandingTokens>
     </feature>
-    
+
     <feature>
         <name>Feature_VtPassthroughMode</name>
         <description>Enables passthrough option per profile in Terminal and ConPTY ability to use passthrough API dispatch engine</description>
@@ -138,6 +138,12 @@
             <brandingToken>Dev</brandingToken>
             <brandingToken>Preview</brandingToken>
         </alwaysEnabledBrandingTokens>
+    </feature>
+
+    <feature>
+        <name>Feature_UnicodeTextSegmentation</name>
+        <description>Enables support for UAX #29 via libicu.</description>
+        <stage>AlwaysDisabled</stage>
     </feature>
 
 </featureStaging>

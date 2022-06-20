@@ -9,7 +9,6 @@
 #include "_output.h"
 #include "misc.h"
 #include "handle.h"
-#include "../buffer/out/CharRow.hpp"
 
 #include <cmath>
 #include "../interactivity/inc/ServiceLocator.hpp"
@@ -2409,6 +2408,11 @@ OutputCellRect SCREEN_INFORMATION::ReadRect(const Viewport viewport) const
     return result;
 }
 
+til::CoordType SCREEN_INFORMATION::Write(const std::wstring_view& text, const TextAttribute& attributes)
+{
+    return _textBuffer->Write(text, attributes);
+}
+
 // Routine Description:
 // - Writes cells to the output buffer at the cursor position.
 // Arguments:
@@ -2658,7 +2662,7 @@ void SCREEN_INFORMATION::InitializeCursorRowAttributes()
         // the current background color, but with no meta attributes set.
         auto fillAttributes = GetAttributes();
         fillAttributes.SetStandardErase();
-        row.GetAttrRow().SetAttrToEnd(0, fillAttributes);
+        row.SetAttrToEnd(0, fillAttributes);
         // The row should also be single width to start with.
         row.SetLineRendition(LineRendition::SingleWidth);
     }
@@ -2689,8 +2693,7 @@ bool SCREEN_INFORMATION::CursorIsDoubleWidth() const
 {
     const auto& buffer = GetTextBuffer();
     const auto position = buffer.GetCursor().GetPosition();
-    TextBufferTextIterator it(TextBufferCellIterator(buffer, position));
-    return IsGlyphFullWidth(*it);
+    return !buffer.GetRowByOffset(position.y).DbcsAttrAt(position.x).IsSingle();
 }
 
 // Method Description:
