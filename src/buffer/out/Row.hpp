@@ -106,7 +106,7 @@ public:
     LineRendition GetLineRendition() const noexcept { return _lineRendition; }
     void SetLineRendition(const LineRendition lineRendition) noexcept { _lineRendition = lineRendition; }
 
-    bool Reset(const TextAttribute& Attr);
+    bool Reset(const TextAttribute& Attr) noexcept;
     void Resize(wchar_t* chars, uint16_t* indices, uint16_t newWidth);
     void TransferAttributes(const til::small_rle<TextAttribute, uint16_t, 1>& attr, til::CoordType newWidth);
 
@@ -114,7 +114,7 @@ public:
     OutputCellIterator WriteCells(OutputCellIterator it, til::CoordType index, std::optional<bool> wrap = std::nullopt, std::optional<til::CoordType> limitRight = std::nullopt);
     bool SetAttrToEnd(til::CoordType beginIndex, TextAttribute attr);
     void ReplaceAttributes(til::CoordType beginIndex, til::CoordType endIndex, const TextAttribute& newAttr);
-    til::CoordType ReplaceCharacters(til::CoordType beginIndex, const std::wstring_view& chars);
+    til::CoordType ReplaceCharacters(til::CoordType beginIndex, std::wstring_view& chars);
     void ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, const std::wstring_view& chars);
 
     const til::small_rle<TextAttribute, uint16_t, 1>& Attributes() const noexcept;
@@ -142,7 +142,7 @@ public:
 private:
     void _dealloc() const noexcept;
     void _init() const noexcept;
-    void _processUnicode(std::wstring_view::iterator it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2);
+    uint16_t _processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2);
     void _resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3);
 
     wchar_t* _charsBuffer = nullptr;

@@ -131,8 +131,7 @@ public:
     TextBufferTextIterator GetTextDataAt(const til::point at) const;
     TextBufferTextIterator GetTextLineDataAt(const til::point at) const;
     TextBufferTextIterator GetTextDataAt(const til::point at, const Microsoft::Console::Types::Viewport limit) const;
-
-    til::CoordType Write(const std::wstring_view& text, const TextAttribute& attributes);
+    
     OutputCellIterator Write(const OutputCellIterator it);
 
     OutputCellIterator Write(const OutputCellIterator it,

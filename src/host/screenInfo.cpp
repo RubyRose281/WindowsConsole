@@ -2408,11 +2408,6 @@ OutputCellRect SCREEN_INFORMATION::ReadRect(const Viewport viewport) const
     return result;
 }
 
-til::CoordType SCREEN_INFORMATION::Write(const std::wstring_view& text, const TextAttribute& attributes)
-{
-    return _textBuffer->Write(text, attributes);
-}
-
 // Routine Description:
 // - Writes cells to the output buffer at the cursor position.
 // Arguments:

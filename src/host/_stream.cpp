@@ -331,6 +331,68 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                                         const DWORD dwFlags,
                                         _Inout_opt_ til::CoordType* const psScrollY)
 {
+#if 0
+    try
+    {
+        UNREFERENCED_PARAMETER(sOriginalXPosition);
+        UNREFERENCED_PARAMETER(pwchBuffer);
+        UNREFERENCED_PARAMETER(pwchBufferBackupLimit);
+
+        auto& textBuffer = screenInfo.GetTextBuffer();
+        auto& cursor = textBuffer.GetCursor();
+        const auto Attributes = textBuffer.GetCurrentAttributes();
+        const auto bufferSize = *pcb / sizeof(wchar_t);
+
+        auto cursorPos = cursor.GetPosition();
+        if (cursor.IsDelayedEOLWrap() && WI_IsFlagSet(screenInfo.OutputMode, ENABLE_WRAP_AT_EOL_OUTPUT))
+        {
+            const auto coordDelayedAt = cursor.GetDelayedAtPosition();
+            cursor.ResetDelayEOLWrap();
+            if (coordDelayedAt == cursorPos)
+            {
+                cursorPos.X = 0;
+                cursorPos.Y++;
+            }
+        }
+
+        std::wstring_view text{ pwchRealUnicode, bufferSize };
+        size_t spaces = 0;
+
+        while (!text.empty())
+        {
+            auto idx = text.find_first_of(L"\r\n");
+            if (idx != 0)
+            {
+                idx = std::min(idx, text.size());
+                spaces += textBuffer.Write(cursorPos, text.substr(0, idx), Attributes);
+                text = text.substr(idx);
+                continue;
+            }
+
+            switch (text[0])
+            {
+            case L'\r':
+                cursorPos.x = 0;
+                break;
+            case L'\n':
+                cursorPos.y++;
+                break;
+            default:
+                break;
+            }
+
+            text = text.substr(1);
+        }
+
+        if (pcSpaces)
+        {
+            *pcSpaces = spaces;
+        }
+
+        return AdjustCursorPosition(screenInfo, cursorPos, dwFlags & WC_KEEP_CURSOR_VISIBLE, psScrollY);
+    }
+    NT_CATCH_RETURN()
+#else
     const auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     auto& textBuffer = screenInfo.GetTextBuffer();
     auto& cursor = textBuffer.GetCursor();
@@ -552,17 +614,18 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                 i = coordScreenBufferSize.X - CursorPosition.X;
             }
 
-            // line was wrapped if we're writing up to the end of the current row
-            til::CoordType cellDistance;
+            til::CoordType distance;
             if constexpr (Feature_UnicodeTextSegmentation::IsEnabled())
             {
-                cellDistance = screenInfo.Write({LocalBuffer, gsl::narrow<size_t>(i)}, Attributes);
+                auto pos = cursor.GetPosition();
+                distance = textBuffer.Write(pos, std::wstring_view(LocalBuffer, i), Attributes);
             }
             else
             {
+                // line was wrapped if we're writing up to the end of the current row
                 OutputCellIterator it(std::wstring_view(LocalBuffer, i), Attributes);
                 const auto itEnd = screenInfo.Write(it);
-                cellDistance = itEnd.GetCellDistance(it);
+                distance = itEnd.GetCellDistance(it);
             }
 
             // Notify accessibility
@@ -573,7 +636,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
 
             // The number of "spaces" or "cells" we have consumed needs to be reported and stored for later
             // when/if we need to erase the command line.
-            TempNumSpaces += cellDistance;
+            TempNumSpaces += distance;
             // WCL-NOTE: We are using the "estimated" X position delta instead of the actual delta from
             // WCL-NOTE: the iterator. It is not clear why. If they differ, the cursor ends up in the
             // WCL-NOTE: wrong place (typically inside another character).
@@ -923,6 +986,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
     }
 
     return STATUS_SUCCESS;
+#endif
 }
 
 // Routine Description:

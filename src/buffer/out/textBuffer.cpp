@@ -381,18 +381,45 @@ bool TextBuffer::_PrepareForDoubleByteSequence(const DbcsAttribute dbcsAttribute
     return fSuccess;
 }
 
-til::CoordType TextBuffer::Write(const std::wstring_view& text, const TextAttribute& attributes)
+til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, const TextAttribute& attributes)
 {
-    const auto target = GetCursor().GetPosition();
-    auto& row = GetRowByOffset(target.y);
+    if (text.empty())
+    {
+        return 0;
+    }
 
-    const auto col = target.x;
-    const auto endCol = row.ReplaceCharacters(col, text);
-    row.ReplaceAttributes(col, endCol, attributes);
+    const auto width = GetSize().Width();
+    auto x = target.x;
+    auto y = target.y;
+    til::CoordType consumed = 0;
 
-    const auto totalWidth = endCol - col;
-    TriggerRedraw(Viewport::FromDimensions(target, { totalWidth, 1 }));
-    return totalWidth;
+    for (; !text.empty();)
+    {
+        if (x >= width)
+        {
+            x = 0;
+            y++;
+        }
+
+        auto& row = GetRowByOffset(y);
+        const auto newx = row.ReplaceCharacters(x, text);
+        row.ReplaceAttributes(x, newx, attributes);
+
+        consumed += newx - x;
+        x = newx;
+    }
+
+    if (y == target.y)
+    {
+        TriggerRedraw(Viewport::FromDimensions(target, { consumed, 1 }));
+    }
+    else
+    {
+        TriggerRedraw(Viewport::FromDimensions({ 0, target.y }, { width, y - target.y + 1 }));
+    }
+
+    target = { x, y };
+    return consumed;
 }
 
 // Routine Description:

@@ -14,7 +14,9 @@
 using UniqueUBreakIterator = wil::unique_any<UBreakIterator*, decltype(&ubrk_close), &ubrk_close>;
 static const UniqueUBreakIterator icuBreakIterator = []() noexcept {
     UErrorCode error = U_ZERO_ERROR;
-    return UniqueUBreakIterator{ ubrk_open(UBRK_CHARACTER, "", nullptr, 0, &error) };
+    UniqueUBreakIterator iterator{ ubrk_open(UBRK_CHARACTER, "", nullptr, 0, &error) };
+    FAIL_FAST_IF_MSG(error > U_ZERO_ERROR, "ubrk_open failed with %hs", u_errorName(error));
+    return iterator;
 }();
 #endif
 
@@ -72,7 +74,7 @@ void ROW::_init() const noexcept
 // - Attr - The default attribute (color) to fill
 // Return Value:
 // - <none>
-bool ROW::Reset(const TextAttribute& Attr)
+bool ROW::Reset(const TextAttribute& Attr) noexcept
 {
     _dealloc();
 
@@ -269,7 +271,8 @@ void ROW::ReplaceAttributes(const til::CoordType beginIndex, const til::CoordTyp
     _attr.replace(clampedUint16(beginIndex), clampedUint16(endIndex), newAttr);
 }
 
-til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstring_view& text)
+til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, std::wstring_view& text)
+try
 {
 #if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
     const auto col1 = clampedUint16(beginIndex);
@@ -292,6 +295,7 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
     const uint16_t ch1 = ch0 + leadingSpaces;
     uint16_t ch2 = ch1;
     uint16_t col2 = col1;
+    uint16_t paddingSpaces = 0;
 
     // ASCII "fast" pass
     do
@@ -299,14 +303,17 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
         if (*it >= 0x80) [[unlikely]]
         {
             // Unicode slow pass
-            _processUnicode(it, end, col2, ch2);
+            paddingSpaces = _processUnicode(it, end, col2, ch2);
             break;
         }
 
         _indices[col2] = ch2;
+        assert(_indices[0] == 0);
         ++it;
         ++col2;
         ++ch2;
+        assert(col2 != 0);
+        assert(ch2 != 0);
     } while (it != end && col2 < _indicesCount);
 
     uint16_t col3 = col2 - 1;
@@ -317,9 +324,10 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
         {
         }
     }
-    const uint16_t trailingSpaces = col3 - col2;
+    const uint16_t trailingSpaces = col3 - col2 + paddingSpaces;
 
-    const size_t insertedChars = text.size() + leadingSpaces + trailingSpaces;
+    const size_t copiedChars = ch2 - ch1;
+    const size_t insertedChars = copiedChars + leadingSpaces + trailingSpaces;
     const size_t ch3new = insertedChars + ch0;
 
     if (ch3new != ch3)
@@ -328,15 +336,19 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
     }
 
     {
-        std::fill(_chars + ch0, _chars + ch1, L' ');
+        std::fill_n(_chars + ch0, leadingSpaces, L' ');
         std::iota(_indices + col0, _indices + col1, ch0);
 
-        std::copy_n(text.data(), text.size(), _chars + ch1);
+        std::copy_n(text.data(), copiedChars, _chars + ch1);
 
-        std::fill(_chars + ch2, _chars + ch3, L' ');
-        std::iota(_indices + col2, _indices + col3, ch2);
+        std::fill_n(_chars + ch2, trailingSpaces, L' ');
+        std::iota(_indices + col2, _indices + col3 + 1, ch2);
     }
 
+    assert(_indices[0] == 0);
+    assert(_indices[_indicesCount] > _indices[_indicesCount - 1]);
+
+    text = { it, end };
     return col3;
 #else
     UNREFERENCED_PARAMETER(beginIndex);
@@ -344,21 +356,39 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
     abort();
 #endif
 }
-
-void ROW::_processUnicode(std::wstring_view::iterator it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2)
+catch (...)
 {
+    // Due to this function writing _indices first, then calling _processUnicode/_resizeChars
+    // (which may throw) and only then finally filling in _chars, we might end up
+    // in a situation were _indices contains offsets outside of the _chars array.
+    // --> Restore this row to a known "okay"-state.
+    Reset(TextAttribute{});
+    throw;
+}
+
+uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2)
+{
+#if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
     const auto text = reinterpret_cast<const char16_t*>(&*it);
     const auto textLength = gsl::narrow<int32_t>(end - it);
+    uint16_t paddingSpaces = 0;
+
     UErrorCode error = U_ZERO_ERROR;
     ubrk_setText(icuBreakIterator.get(), text, textLength, &error);
+    THROW_HR_IF_MSG(E_UNEXPECTED, error > U_ZERO_ERROR, "ubrk_setText failed with %hs", u_errorName(error));
 
     for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
     {
-        const size_t advance = ubrk1 - ubrk0;
+        const auto advance = clampedUint16(ubrk1 - ubrk0);
+        //(UEastAsianWidth)u_getIntPropertyValue(input, UCHAR_EAST_ASIAN_WIDTH);
         auto width = 1 + IsGlyphFullWidth({ &*it, advance });
-        if (width > _indicesCount - col2)
+
+        if (width >= _indicesCount - col2)
         {
-            // TODO: ClearCell(currentIndex); SetDoubleBytePadded(true);
+            SetDoubleBytePadded(true);
+            // Normally this should be something like `col2 + width - _indicesCount`.
+            // But `width` can only ever be either 1 or 2 which means paddingSpaces can only be 1.
+            paddingSpaces = 1;
             break;
         }
 
@@ -367,10 +397,23 @@ void ROW::_processUnicode(std::wstring_view::iterator it, std::wstring_view::ite
             _indices[col2++] = ch2;
         } while (--width);
 
+        assert(_indices[0] == 0);
+
         it += advance;
+        assert(static_cast<uint16_t>(ch2 + advance) > ch2);
         ch2 += advance;
     }
+
+    return paddingSpaces;
+#else
+    UNREFERENCED_PARAMETER(it);
+    UNREFERENCED_PARAMETER(end);
+    UNREFERENCED_PARAMETER(col2);
+    UNREFERENCED_PARAMETER(ch2);
+    abort();
+#endif
 }
+
 void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, const std::wstring_view& chars)
 {
     const auto col1 = clampedUint16(beginIndex);
