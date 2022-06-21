@@ -139,9 +139,10 @@ public:
     friend class RowTests;
 #endif
 
-//private:
+private:
     void _dealloc() const noexcept;
     void _init() const noexcept;
+    void _processUnicode(std::wstring_view::iterator it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2);
     void _resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3);
 
     wchar_t* _charsBuffer = nullptr;

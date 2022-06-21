@@ -6,7 +6,6 @@
 #include "textBuffer.hpp"
 
 #include "../../types/inc/GlyphWidth.hpp"
-#include "../../types/inc/Utf16Parser.hpp"
 
 #if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
 #include <icu.h>
@@ -272,6 +271,7 @@ void ROW::ReplaceAttributes(const til::CoordType beginIndex, const til::CoordTyp
 
 til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstring_view& text)
 {
+#if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
     const auto col1 = clampedUint16(beginIndex);
 
     if ((col1 >= _indicesCount) | text.empty())
@@ -293,90 +293,21 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
     uint16_t ch2 = ch1;
     uint16_t col2 = col1;
 
-#if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
+    // ASCII "fast" pass
+    do
     {
-        do
+        if (*it >= 0x80) [[unlikely]]
         {
-            if (*it >= 0x80)
-            {
-                break;
-            }
-
-            _indices[col2] = ch2;
-            ++it;
-            ++col2;
-            ++ch2;
-        } while (it != end);
-
-        if (it != end)
-        {
-            const auto text = reinterpret_cast<const char16_t*>(&*it);
-            const auto textLength = gsl::narrow<int32_t>(end - it);
-            UErrorCode error = U_ZERO_ERROR;
-            ubrk_setText(icuBreakIterator.get(), text, textLength, &error);
-
-            for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
-            {
-                const size_t advance = ubrk1 - ubrk0;
-                auto width = 1 + IsGlyphFullWidth({ &*it, advance });
-                if (width > _indicesCount - col2)
-                {
-                    // TODO: ClearCell(currentIndex); SetDoubleBytePadded(true);
-                    break;
-                }
-
-                do
-                {
-                    _indices[col2++] = ch2;
-                } while (--width);
-
-                it += advance;
-                ch2 += advance;
-            }
+            // Unicode slow pass
+            _processUnicode(it, end, col2, ch2);
+            break;
         }
-    }
-#else
-    {
-        const auto last = end - 1;
 
-        do
-        {
-            if (*it >= 0x80)
-            {
-                break;
-            }
-
-            _indices[col2] = ch2;
-            ++it;
-            ++col2;
-            ++ch2;
-        } while (it != end);
-
-        while (it != end)
-        {
-            uint16_t advance = 1;
-            if (Utf16Parser::IsLeadingSurrogate(*it) && it != last)
-            {
-                ++advance;
-            }
-
-            auto width = 1 + IsGlyphFullWidth({ &*it, advance });
-            if (width > _indicesCount - col2)
-            {
-                // TODO: ClearCell(currentIndex); SetDoubleBytePadded(true);
-                break;
-            }
-
-            do
-            {
-                _indices[col2++] = ch2;
-            } while (--width);
-
-            it += advance;
-            ch2 += advance;
-        }
-    }
-#endif
+        _indices[col2] = ch2;
+        ++it;
+        ++col2;
+        ++ch2;
+    } while (it != end && col2 < _indicesCount);
 
     uint16_t col3 = col2 - 1;
     uint16_t ch3;
@@ -397,32 +328,49 @@ til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, const std::wstr
     }
 
     {
-        auto ch = _chars + ch0;
-        auto in0 = _indices + col0;
-        const auto in1 = _indices + col1;
-        auto in2 = _indices + col2;
-        const auto in3 = _indices + col3;
-        auto chPos = ch0;
+        std::fill(_chars + ch0, _chars + ch1, L' ');
+        std::iota(_indices + col0, _indices + col1, ch0);
 
-        for (; in0 != in1; ++ch, ++in0, ++chPos)
-        {
-            *ch = L' ';
-            *in0 = chPos;
-        }
+        std::copy_n(text.data(), text.size(), _chars + ch1);
 
-        ch = std::copy_n(text.data(), text.size(), ch);
-        chPos += text.size();
-
-        for (; in2 != in3; ++ch, ++in2, ++chPos)
-        {
-            *ch = L' ';
-            *in2 = chPos;
-        }
+        std::fill(_chars + ch2, _chars + ch3, L' ');
+        std::iota(_indices + col2, _indices + col3, ch2);
     }
 
     return col3;
+#else
+    UNREFERENCED_PARAMETER(beginIndex);
+    UNREFERENCED_PARAMETER(text);
+    abort();
+#endif
 }
 
+void ROW::_processUnicode(std::wstring_view::iterator it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2)
+{
+    const auto text = reinterpret_cast<const char16_t*>(&*it);
+    const auto textLength = gsl::narrow<int32_t>(end - it);
+    UErrorCode error = U_ZERO_ERROR;
+    ubrk_setText(icuBreakIterator.get(), text, textLength, &error);
+
+    for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
+    {
+        const size_t advance = ubrk1 - ubrk0;
+        auto width = 1 + IsGlyphFullWidth({ &*it, advance });
+        if (width > _indicesCount - col2)
+        {
+            // TODO: ClearCell(currentIndex); SetDoubleBytePadded(true);
+            break;
+        }
+
+        do
+        {
+            _indices[col2++] = ch2;
+        } while (--width);
+
+        it += advance;
+        ch2 += advance;
+    }
+}
 void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, const std::wstring_view& chars)
 {
     const auto col1 = clampedUint16(beginIndex);
