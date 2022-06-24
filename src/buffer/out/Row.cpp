@@ -59,12 +59,12 @@ void ROW::_dealloc() const noexcept
     }
 }
 
-void ROW::_init() const noexcept
+void ROW::_init() noexcept
 {
     if (_chars)
     {
-        std::fill_n(_chars, _indicesCount, UNICODE_SPACE);
-        std::iota(_indices, _indices + _indicesCount + 1, static_cast<uint16_t>(0));
+        std::fill_n(_charsBegin(), _indicesCount, UNICODE_SPACE);
+        std::iota(_indicesBegin(), _indicesBegin() + _indicesCount + 1, static_cast<uint16_t>(0));
     }
 }
 
@@ -102,8 +102,8 @@ void ROW::Resize(wchar_t* const charsBuffer, uint16_t* const indices, const uint
     if (_indices)
     {
         colsToCopy = std::min(_indicesCount, newWidth);
-        charsToCopy = _indices[colsToCopy];
-        for (; colsToCopy != 0 && _indices[colsToCopy - 1] == charsToCopy; --colsToCopy)
+        charsToCopy = _indicesAt(colsToCopy);
+        for (; colsToCopy != 0 && _indicesAt(colsToCopy - 1) == charsToCopy; --colsToCopy)
         {
         }
     }
@@ -117,11 +117,11 @@ void ROW::Resize(wchar_t* const charsBuffer, uint16_t* const indices, const uint
     }
 
     {
-        const auto it = std::copy_n(_chars, charsToCopy, chars);
+        const auto it = std::copy_n(_charsBegin(), charsToCopy, chars);
         std::fill_n(it, trailingWhitespace, L' ');
     }
     {
-        const auto it = std::copy_n(_indices, colsToCopy, indices);
+        const auto it = std::copy_n(_indicesBegin(), colsToCopy, indices);
         // The _indices array is 1 wider than newWidth indicates.
         // This is because the extra column contains the past-the-end index into _chars.
         std::iota(it, it + trailingWhitespace + 1, charsToCopy);
@@ -286,8 +286,8 @@ try
     const auto end = text.end();
 
     uint16_t col0 = col1;
-    const uint16_t ch0 = _indices[col0];
-    for (; col0 != 0 && _indices[col0 - 1] == ch0; --col0)
+    const uint16_t ch0 = _indicesAt(col0);
+    for (; col0 != 0 && _indicesAt(col0 - 1) == ch0; --col0)
     {
     }
     const uint16_t leadingSpaces = col1 - col0;
@@ -296,6 +296,7 @@ try
     uint16_t ch2 = ch1;
     uint16_t col2 = col1;
     uint16_t paddingSpaces = 0;
+    uint16_t ch3ref = 0;
 
     // ASCII "fast" pass
     do
@@ -303,12 +304,16 @@ try
         if (*it >= 0x80) [[unlikely]]
         {
             // Unicode slow pass
-            paddingSpaces = _processUnicode(it, end, col2, ch2);
+            paddingSpaces = _processUnicode(it, end, col2, ch2, ch3ref);
             break;
         }
 
-        _indices[col2] = ch2;
-        assert(_indices[0] == 0);
+        ch3ref = _indicesAt(col2);
+        _indicesAt(col2) = ch2;
+        assert(_indicesAt(0) == 0);
+        assert(ch2 < 1000);
+        assert(col2 < _indicesCount);
+
         ++it;
         ++col2;
         ++ch2;
@@ -316,15 +321,14 @@ try
         assert(ch2 != 0);
     } while (it != end && col2 < _indicesCount);
 
-    uint16_t col3 = col2 - 1;
+    uint16_t col3 = col2 - 1 + paddingSpaces;
     uint16_t ch3;
     {
-        const uint16_t ch3ref = _indices[col3];
-        while ((ch3 = _indices[++col3]) == ch3ref)
+        while ((ch3 = _indicesAt(++col3)) == ch3ref)
         {
         }
     }
-    const uint16_t trailingSpaces = col3 - col2 + paddingSpaces;
+    const uint16_t trailingSpaces = col3 - col2;
 
     const size_t copiedChars = ch2 - ch1;
     const size_t insertedChars = copiedChars + leadingSpaces + trailingSpaces;
@@ -336,17 +340,17 @@ try
     }
 
     {
-        std::fill_n(_chars + ch0, leadingSpaces, L' ');
-        std::iota(_indices + col0, _indices + col1, ch0);
+        std::fill_n(_charsBegin() + ch0, leadingSpaces, L' ');
+        std::iota(_indicesBegin() + col0, _indicesBegin() + col1, ch0);
 
-        std::copy_n(text.data(), copiedChars, _chars + ch1);
+        std::copy_n(text.data(), copiedChars, _charsBegin() + ch1);
 
-        std::fill_n(_chars + ch2, trailingSpaces, L' ');
-        std::iota(_indices + col2, _indices + col3 + 1, ch2);
+        std::fill_n(_charsBegin() + ch2, trailingSpaces, L' ');
+        std::iota(_indicesBegin() + col2, _indicesBegin() + col3 + 1, ch2);
     }
 
-    assert(_indices[0] == 0);
-    assert(_indices[_indicesCount] > _indices[_indicesCount - 1]);
+    assert(_indicesAt(0) == 0);
+    assert(_indicesAt(_indicesCount) > _indicesAt(_indicesCount - 1));
 
     text = { it, end };
     return col3;
@@ -366,7 +370,7 @@ catch (...)
     throw;
 }
 
-uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2)
+uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2, uint16_t& ch3ref)
 {
 #if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
     const auto text = reinterpret_cast<const char16_t*>(&*it);
@@ -394,13 +398,17 @@ uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view
 
         do
         {
-            _indices[col2++] = ch2;
+            ch3ref = _indicesAt(col2);
+            _indicesAt(col2) = ch2;
+            assert(_indicesAt(0) == 0);
+            assert(ch2 < 1000);
+            assert(col2 < _indicesCount);
+            ++col2;
         } while (--width);
 
-        assert(_indices[0] == 0);
+        assert(static_cast<uint16_t>(ch2 + advance) > ch2);
 
         it += advance;
-        assert(static_cast<uint16_t>(ch2 + advance) > ch2);
         ch2 += advance;
     }
 
@@ -425,16 +433,16 @@ void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, 
     }
 
     uint16_t col0 = col1;
-    const uint16_t ch0 = _indices[col0];
-    for (; col0 != 0 && _indices[col0 - 1] == ch0; --col0)
+    const uint16_t ch0 = _indicesAt(col0);
+    for (; col0 != 0 && _indicesAt(col0 - 1) == ch0; --col0)
     {
     }
 
     uint16_t col3 = col2 - 1;
     uint16_t ch3;
     {
-        const uint16_t ch3ref = _indices[col3];
-        while ((ch3 = _indices[++col3]) == ch3ref)
+        const uint16_t ch3ref = _indicesAt(col3);
+        while ((ch3 = _indicesAt(++col3)) == ch3ref)
         {
         }
     }
@@ -450,11 +458,11 @@ void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, 
     }
 
     {
-        auto ch = _chars + ch0;
-        auto in0 = _indices + col0;
-        const auto in1 = _indices + col1;
-        auto in2 = _indices + col2;
-        const auto in3 = _indices + col3;
+        auto ch = _charsBegin() + ch0;
+        auto in0 = _indicesBegin() + col0;
+        const auto in1 = _indicesBegin() + col1;
+        auto in2 = _indicesBegin() + col2;
+        const auto in3 = _indicesBegin() + col3;
         auto chPos = ch0;
 
         for (; in0 != in1; ++ch, ++in0, ++chPos)
@@ -478,12 +486,12 @@ void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, 
 void ROW::_resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3)
 {
     const auto diff = ch3new - ch3;
-    const auto currentLength = _indices[_indicesCount];
+    const auto currentLength = _indicesAt(_indicesCount);
     const auto newLength = currentLength + diff;
 
     if (newLength <= _charsCapacity)
     {
-        std::copy_n(_chars + ch3, currentLength - ch3, _chars + ch3new);
+        std::copy_n(_charsBegin() + ch3, currentLength - ch3, _charsBegin() + ch3new);
     }
     else
     {
@@ -491,8 +499,8 @@ void ROW::_resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3)
         const auto newCapacity = gsl::narrow<uint16_t>(std::max(newLength, minCapacity));
         const auto chars = new wchar_t[newCapacity];
 
-        std::copy_n(_chars, ch0, chars);
-        std::copy_n(_chars + ch3, currentLength - ch3, chars + ch3new);
+        std::copy_n(_charsBegin(), ch0, chars);
+        std::copy_n(_charsBegin() + ch3, currentLength - ch3, chars + ch3new);
 
         if (_chars != _charsBuffer)
         {
@@ -539,8 +547,8 @@ uint16_t ROW::size() const noexcept
 
 til::CoordType ROW::MeasureLeft() const noexcept
 {
-    const auto beg = _chars;
-    const auto end = beg + _indices[_indicesCount];
+    const auto beg = _charsBegin();
+    const auto end = beg + _indicesAt(_indicesCount);
     auto it = beg;
 
     for (; it != end; ++it)
@@ -556,8 +564,8 @@ til::CoordType ROW::MeasureLeft() const noexcept
 
 til::CoordType ROW::MeasureRight() const noexcept
 {
-    const auto beg = _chars;
-    const auto end = beg + _indices[_indicesCount];
+    const auto beg = _charsBegin();
+    const auto end = beg + _indicesAt(_indicesCount);
     auto it = end;
 
     for (; it != beg; --it)
@@ -578,8 +586,8 @@ til::CoordType ROW::MeasureRight() const noexcept
 
 bool ROW::ContainsText() const noexcept
 {
-    auto it = _chars;
-    const auto end = it + _indices[_indicesCount];
+    auto it = _charsBegin();
+    const auto end = it + _indicesAt(_indicesCount);
 
     for (; it != end; ++it)
     {
@@ -596,12 +604,12 @@ std::wstring_view ROW::GlyphAt(til::CoordType column) const noexcept
 {
     column = std::min(column, _indicesCount - 1);
 
-    const auto current = _indices[column];
-    while (column <= _indicesCount && _indices[++column] == current)
+    const auto current = _indicesAt(column);
+    while (column <= _indicesCount && _indicesAt(++column) == current)
     {
     }
 
-    const auto len = gsl::narrow_cast<size_t>(_indices[column] - current);
+    const auto len = gsl::narrow_cast<size_t>(_indicesAt(column) - current);
     return { _chars + current, len };
 }
 
@@ -609,14 +617,14 @@ DbcsAttribute ROW::DbcsAttrAt(til::CoordType column) const noexcept
 {
     column = std::min(column, _indicesCount - 1);
 
-    const auto idx = _indices[column];
+    const auto idx = _indicesAt(column);
 
     auto attr = DbcsAttribute::Attribute::Single;
-    if (column > 0 && _indices[column - 1] == idx)
+    if (column > 0 && _indicesAt(column - 1) == idx)
     {
         attr = DbcsAttribute::Attribute::Trailing;
     }
-    else if (column < _indicesCount && _indices[column + 1] == idx)
+    else if (column < _indicesCount && _indicesAt(column + 1) == idx)
     {
         attr = DbcsAttribute::Attribute::Leading;
     }
@@ -626,14 +634,14 @@ DbcsAttribute ROW::DbcsAttrAt(til::CoordType column) const noexcept
 
 std::wstring_view ROW::GetText() const noexcept
 {
-    return { _chars, _indices[_indicesCount] };
+    return { _chars, _indicesAt(_indicesCount) };
 }
 
 DelimiterClass ROW::DelimiterClassAt(til::CoordType column, const std::wstring_view& wordDelimiters) const noexcept
 {
     column = std::min(column, _indicesCount - 1);
 
-    const auto glyph = _chars[_indices[column]];
+    const auto glyph = _charsAt(_indicesAt(column));
 
     if (glyph <= L' ')
     {

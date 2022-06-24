@@ -249,7 +249,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
     if (coordCursor.Y >= bufferSize.Y)
     {
         // At the end of the buffer. Scroll contents of screen buffer so new position is visible.
-        FAIL_FAST_IF(!(coordCursor.Y == bufferSize.Y));
+        //FAIL_FAST_IF(!(coordCursor.Y == bufferSize.Y));
         if (!StreamScrollRegion(screenInfo))
         {
             Status = STATUS_NO_MEMORY;
@@ -331,7 +331,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                                         const DWORD dwFlags,
                                         _Inout_opt_ til::CoordType* const psScrollY)
 {
-#if 0
+#if 1
     try
     {
         UNREFERENCED_PARAMETER(sOriginalXPosition);
@@ -376,6 +376,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                 break;
             case L'\n':
                 cursorPos.y++;
+                std::ignore = AdjustCursorPosition(screenInfo, cursorPos, dwFlags & WC_KEEP_CURSOR_VISIBLE, psScrollY);
                 break;
             default:
                 break;
@@ -389,6 +390,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             *pcSpaces = spaces;
         }
 
+        //cursorPos = std::min(cursorPos, textBuffer.GetSize().BottomRightInclusive());
         return AdjustCursorPosition(screenInfo, cursorPos, dwFlags & WC_KEEP_CURSOR_VISIBLE, psScrollY);
     }
     NT_CATCH_RETURN()

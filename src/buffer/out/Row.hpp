@@ -140,9 +140,37 @@ public:
 #endif
 
 private:
+    // clang-format off
+#ifndef NDEBUG
+    constexpr gsl::span<wchar_t>::iterator _charsBegin() noexcept { return gsl::make_span(_chars, _charsCapacity).begin(); }
+    constexpr gsl::span<const wchar_t>::iterator _charsBegin() const noexcept { return gsl::make_span(_chars, _charsCapacity).begin(); }
+
+    constexpr gsl::span<uint16_t>::iterator _indicesBegin() noexcept { return gsl::make_span(_indices, _indicesCount + 1).begin(); }
+    constexpr gsl::span<const uint16_t>::iterator _indicesBegin() const noexcept { return gsl::make_span(_indices, _indicesCount + 1).begin(); }
+
+    wchar_t& _charsAt(size_t idx) noexcept { Expects(_chars && idx < _charsCapacity); return _chars[idx]; }
+    const wchar_t& _charsAt(size_t idx) const noexcept { Expects(_chars && idx < _charsCapacity); return _chars[idx]; }
+    
+    uint16_t& _indicesAt(size_t idx) noexcept { Expects(_indices && idx < _indicesCount + 1); return _indices[idx]; }
+    const uint16_t& _indicesAt(size_t idx) const noexcept { Expects(_indices && idx < _indicesCount + 1); return _indices[idx]; }
+#else
+    constexpr wchar_t* _charsBegin() noexcept { return _chars; }
+    constexpr const wchar_t*  _charsBegin() const noexcept { return _chars; }
+
+    constexpr uint16_t* _indicesBegin() noexcept { return _indices; }
+    constexpr const uint16_t* _indicesBegin() const noexcept { return _indices; }
+
+    wchar_t& _charsAt(size_t idx) noexcept { return _chars[idx]; }
+    const wchar_t& _charsAt(size_t idx) const noexcept { return _chars[idx]; }
+    
+    uint16_t& _indicesAt(size_t idx) noexcept { return _indices[idx]; }
+    const uint16_t& _indicesAt(size_t idx) const noexcept { return _indices[idx]; }
+#endif
+    // clang-format on
+
     void _dealloc() const noexcept;
-    void _init() const noexcept;
-    uint16_t _processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2);
+    void _init() noexcept;
+    uint16_t _processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2, uint16_t& ch3ref);
     void _resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3);
 
     wchar_t* _charsBuffer = nullptr;

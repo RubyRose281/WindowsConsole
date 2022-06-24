@@ -399,6 +399,12 @@ til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, con
         {
             x = 0;
             y++;
+
+            if (y > GetSize().BottomInclusive())
+            {
+                y = GetSize().BottomInclusive();
+                IncrementCircularBuffer();
+            }
         }
 
         auto& row = GetRowByOffset(y);
