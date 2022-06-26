@@ -331,7 +331,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                                         const DWORD dwFlags,
                                         _Inout_opt_ til::CoordType* const psScrollY)
 {
-#if 1
+#if 0
     try
     {
         UNREFERENCED_PARAMETER(sOriginalXPosition);

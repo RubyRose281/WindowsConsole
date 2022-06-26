@@ -7,6 +7,8 @@
 
 #include "../../types/inc/GlyphWidth.hpp"
 
+#define ASSERT(b) do { if (!(b)) __debugbreak(); } while (false)
+
 #if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
 #include <icu.h>
 #pragma comment(lib, "icu.lib")
@@ -282,8 +284,12 @@ try
         return col1;
     }
 
-    auto it = text.begin();
-    const auto end = text.end();
+    ASSERT(_charsCapacity < 256);
+    ASSERT(_indicesCount < 256);
+    wchar_t charsBackup[256];
+    uint16_t indicesBackup[256];
+    std::copy_n(_chars, _charsCapacity, &charsBackup[0]);
+    std::copy_n(_indices, _indicesCount, &indicesBackup[0]);
 
     uint16_t col0 = col1;
     const uint16_t ch0 = _indicesAt(col0);
@@ -298,28 +304,31 @@ try
     uint16_t paddingSpaces = 0;
     uint16_t ch3ref = 0;
 
-    // ASCII "fast" pass
-    do
+    const auto beg = text.begin();
+    const auto end = text.end();
+    auto it = beg;
     {
-        if (*it >= 0x80) [[unlikely]]
+        // ASCII "fast" pass
+        const auto asciiMax = beg + std::min<size_t>(_indicesCount - col2, text.size());
+        const auto asciiEnd = std::find_if(beg, asciiMax, [](const auto& ch) { return ch >= 0x80; });
+        for (; it != asciiEnd; ++it, ++col2, ++ch2)
         {
-            // Unicode slow pass
-            paddingSpaces = _processUnicode(it, end, col2, ch2, ch3ref);
-            break;
+            ch3ref = _indicesAt(col2);
+            _indicesAt(col2) = ch2;
         }
 
-        ch3ref = _indicesAt(col2);
-        _indicesAt(col2) = ch2;
-        assert(_indicesAt(0) == 0);
-        assert(ch2 < 1000);
-        assert(col2 < _indicesCount);
-
-        ++it;
-        ++col2;
-        ++ch2;
-        assert(col2 != 0);
-        assert(ch2 != 0);
-    } while (it != end && col2 < _indicesCount);
+        // Regular Unicode processing
+        if (it != asciiMax)
+        {
+            if (it != beg)
+            {
+                --it;
+                --col2;
+                --ch2;
+            }
+            paddingSpaces = _processUnicode(it, end, col2, ch2, ch3ref);
+        }
+    }
 
     uint16_t col3 = col2 - 1 + paddingSpaces;
     uint16_t ch3;
@@ -349,8 +358,43 @@ try
         std::iota(_indicesBegin() + col2, _indicesBegin() + col3 + 1, ch2);
     }
 
-    assert(_indicesAt(0) == 0);
-    assert(_indicesAt(_indicesCount) > _indicesAt(_indicesCount - 1));
+    ASSERT(_indicesAt(0) == 0);
+
+    for (uint16_t i = 0; i <= _indicesCount; ++i)
+    {
+        ASSERT(_indices[i] <= _charsCapacity);
+        if (i)
+        {
+            const auto delta = _indices[i] - _indices[i - 1];
+            ASSERT(delta >= 0 && delta <= 20);
+        }
+    }
+
+    {
+        auto it = CharsBegin();
+        const auto end = CharsEnd();
+
+        UErrorCode error = U_ZERO_ERROR;
+        ubrk_setText(icuBreakIterator.get(), reinterpret_cast<const char16_t*>(_chars), _indicesAt(_indicesCount), &error);
+        THROW_HR_IF_MSG(E_UNEXPECTED, error > U_ZERO_ERROR, "ubrk_setText failed with %hs", u_errorName(error));
+
+        for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
+        {
+            ASSERT(it != end);
+
+            const auto expectedCols = it.Cols();
+            const auto expectedText = it.Text();
+            const auto advance = clampedUint16(ubrk1 - ubrk0);
+            const auto width = 1 + IsGlyphFullWidth({ _chars + ubrk0, advance });
+
+            ASSERT(width == expectedCols);
+            ASSERT(expectedText.data() == _chars + ubrk0 && expectedText.size() == advance);
+
+            ++it;
+        }
+
+        ASSERT(it == end);
+    }
 
     text = { it, end };
     return col3;
@@ -400,13 +444,13 @@ uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view
         {
             ch3ref = _indicesAt(col2);
             _indicesAt(col2) = ch2;
-            assert(_indicesAt(0) == 0);
-            assert(ch2 < 1000);
-            assert(col2 < _indicesCount);
+            ASSERT(_indicesAt(0) == 0);
+            ASSERT(ch2 < 1000);
+            ASSERT(col2 < _indicesCount);
             ++col2;
         } while (--width);
 
-        assert(static_cast<uint16_t>(ch2 + advance) > ch2);
+        ASSERT(static_cast<uint16_t>(ch2 + advance) > ch2);
 
         it += advance;
         ch2 += advance;
