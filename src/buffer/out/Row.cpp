@@ -7,7 +7,12 @@
 
 #include "../../types/inc/GlyphWidth.hpp"
 
-#define ASSERT(b) do { if (!(b)) __debugbreak(); } while (false)
+#define ASSERT(b)           \
+    do                      \
+    {                       \
+        if (!(b))           \
+            __debugbreak(); \
+    } while (false)
 
 #if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
 #include <icu.h>
@@ -22,12 +27,54 @@ static const UniqueUBreakIterator icuBreakIterator = []() noexcept {
 }();
 #endif
 
+#define DEBUG 1
+
 #pragma warning(push, 1)
 
-template<typename T>
-constexpr uint16_t clampedUint16(T v) noexcept
+RowTextIterator::RowTextIterator(wchar_t* chars, uint16_t* indices, uint16_t indicesCount, uint16_t beg, uint16_t end) noexcept:
+    _chars{ chars },
+    _indices{ indices },
+    _indicesCount{ indicesCount },
+    _beg{ beg },
+    _end{ end }
 {
-    return static_cast<uint16_t>(std::max(0, std::min(65535, v)));
+    operator++();
+}
+
+bool RowTextIterator::operator==(const RowTextIterator& other) const noexcept
+{
+    return _beg == other._beg;
+}
+
+RowTextIterator& RowTextIterator::operator++() noexcept
+{
+    _beg = _end;
+    while (_end < _indicesCount && _isTrailer(++_end))
+    {
+    }
+    return *this;
+}
+
+const RowTextIterator& RowTextIterator::operator*() const noexcept
+{
+    return *this;
+}
+
+std::wstring_view RowTextIterator::Text() const noexcept
+{
+    const auto beg = _indexAt(_beg);
+    const auto end = _indexAt(_end);
+    return { _chars + beg, gsl::narrow_cast<size_t>(end - beg) };
+}
+
+til::CoordType RowTextIterator::Cols() const noexcept
+{
+    return _end - _beg;
+}
+
+DbcsAttribute RowTextIterator::DbcsAttr() const noexcept
+{
+    return Cols() == 2 ? DbcsAttribute::Attribute::Leading : DbcsAttribute::Attribute::Single;
 }
 
 // Routine Description:
@@ -104,8 +151,8 @@ void ROW::Resize(wchar_t* const charsBuffer, uint16_t* const indices, const uint
     if (_indices)
     {
         colsToCopy = std::min(_indicesCount, newWidth);
-        charsToCopy = _indicesAt(colsToCopy);
-        for (; colsToCopy != 0 && _indicesAt(colsToCopy - 1) == charsToCopy; --colsToCopy)
+        charsToCopy = _indexAt(colsToCopy);
+        for (; colsToCopy != 0 && _isTrailer(colsToCopy); --colsToCopy)
         {
         }
     }
@@ -276,24 +323,26 @@ void ROW::ReplaceAttributes(const til::CoordType beginIndex, const til::CoordTyp
 til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, std::wstring_view& text)
 try
 {
-#if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
+#if 1 //TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
     const auto col1 = clampedUint16(beginIndex);
 
-    if ((col1 >= _indicesCount) | text.empty())
+    if (col1 >= _indicesCount || text.empty())
     {
         return col1;
     }
 
+#if DEBUG
     ASSERT(_charsCapacity < 256);
     ASSERT(_indicesCount < 256);
     wchar_t charsBackup[256];
     uint16_t indicesBackup[256];
     std::copy_n(_chars, _charsCapacity, &charsBackup[0]);
     std::copy_n(_indices, _indicesCount, &indicesBackup[0]);
+#endif
 
     uint16_t col0 = col1;
-    const uint16_t ch0 = _indicesAt(col0);
-    for (; col0 != 0 && _indicesAt(col0 - 1) == ch0; --col0)
+    const uint16_t ch0 = _indexAt(col0);
+    for (; col0 != 0 && _isTrailer(col0); --col0)
     {
     }
     const uint16_t leadingSpaces = col1 - col0;
@@ -302,7 +351,6 @@ try
     uint16_t ch2 = ch1;
     uint16_t col2 = col1;
     uint16_t paddingSpaces = 0;
-    uint16_t ch3ref = 0;
 
     const auto beg = text.begin();
     const auto end = text.end();
@@ -313,30 +361,61 @@ try
         const auto asciiEnd = std::find_if(beg, asciiMax, [](const auto& ch) { return ch >= 0x80; });
         for (; it != asciiEnd; ++it, ++col2, ++ch2)
         {
-            ch3ref = _indicesAt(col2);
-            _indicesAt(col2) = ch2;
+            _setLeaderAt(col2, ch2);
         }
 
         // Regular Unicode processing
         if (it != asciiMax)
         {
+            // TODO backoff explain
             if (it != beg)
             {
                 --it;
                 --col2;
                 --ch2;
             }
-            paddingSpaces = _processUnicode(it, end, col2, ch2, ch3ref);
+
+            const auto text = reinterpret_cast<const char16_t*>(&*it);
+            const auto textLength = gsl::narrow<int32_t>(end - it);
+
+            UErrorCode error = U_ZERO_ERROR;
+            ubrk_setText(icuBreakIterator.get(), text, textLength, &error);
+            THROW_HR_IF_MSG(E_UNEXPECTED, error > U_ZERO_ERROR, "ubrk_setText failed with %hs", u_errorName(error));
+
+            for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
+            {
+                const auto advance = clampedUint16(ubrk1 - ubrk0);
+                //(UEastAsianWidth)u_getIntPropertyValue(input, UCHAR_EAST_ASIAN_WIDTH);
+                auto width = 1 + IsGlyphFullWidth({ &*it, advance });
+
+                if (width >= _indicesCount - col2)
+                {
+                    SetDoubleBytePadded(true);
+                    // Normally this should be something like `col2 + width - _indicesCount`.
+                    // But `width` can only ever be either 1 or 2 which means paddingSpaces can only be 1.
+                    paddingSpaces = 1;
+                    break;
+                }
+
+                _setLeaderAt(col2++, ch2);
+                if (width != 1)
+                {
+                    _setTrailerAt(col2++, ch2);
+                }
+
+                ASSERT(static_cast<uint16_t>(ch2 + advance) > ch2);
+
+                it += advance;
+                ch2 += advance;
+            }
         }
     }
 
-    uint16_t col3 = col2 - 1 + paddingSpaces;
-    uint16_t ch3;
+    uint16_t col3 = col2 + paddingSpaces;
+    for (; _isTrailer(col3); ++col3)
     {
-        while ((ch3 = _indicesAt(++col3)) == ch3ref)
-        {
-        }
     }
+    const uint16_t ch3 = _indexAt(col3);
     const uint16_t trailingSpaces = col3 - col2;
 
     const size_t copiedChars = ch2 - ch1;
@@ -358,7 +437,7 @@ try
         std::iota(_indicesBegin() + col2, _indicesBegin() + col3 + 1, ch2);
     }
 
-    ASSERT(_indicesAt(0) == 0);
+    ASSERT(_indexAt(0) == 0);
 
     for (uint16_t i = 0; i <= _indicesCount; ++i)
     {
@@ -370,12 +449,13 @@ try
         }
     }
 
+#if DEBUG
     {
         auto it = CharsBegin();
         const auto end = CharsEnd();
 
         UErrorCode error = U_ZERO_ERROR;
-        ubrk_setText(icuBreakIterator.get(), reinterpret_cast<const char16_t*>(_chars), _indicesAt(_indicesCount), &error);
+        ubrk_setText(icuBreakIterator.get(), reinterpret_cast<const char16_t*>(_chars), _charsSize(), &error);
         THROW_HR_IF_MSG(E_UNEXPECTED, error > U_ZERO_ERROR, "ubrk_setText failed with %hs", u_errorName(error));
 
         for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
@@ -395,6 +475,7 @@ try
 
         ASSERT(it == end);
     }
+#endif
 
     text = { it, end };
     return col3;
@@ -414,97 +495,42 @@ catch (...)
     throw;
 }
 
-uint16_t ROW::_processUnicode(std::wstring_view::iterator& it, std::wstring_view::iterator end, uint16_t& col2, uint16_t& ch2, uint16_t& ch3ref)
-{
-#if TIL_FEATURE_UNICODETEXTSEGMENTATION_ENABLED
-    const auto text = reinterpret_cast<const char16_t*>(&*it);
-    const auto textLength = gsl::narrow<int32_t>(end - it);
-    uint16_t paddingSpaces = 0;
-
-    UErrorCode error = U_ZERO_ERROR;
-    ubrk_setText(icuBreakIterator.get(), text, textLength, &error);
-    THROW_HR_IF_MSG(E_UNEXPECTED, error > U_ZERO_ERROR, "ubrk_setText failed with %hs", u_errorName(error));
-
-    for (int32_t ubrk0 = 0, ubrk1; (ubrk1 = ubrk_next(icuBreakIterator.get())) != UBRK_DONE; ubrk0 = ubrk1)
-    {
-        const auto advance = clampedUint16(ubrk1 - ubrk0);
-        //(UEastAsianWidth)u_getIntPropertyValue(input, UCHAR_EAST_ASIAN_WIDTH);
-        auto width = 1 + IsGlyphFullWidth({ &*it, advance });
-
-        if (width >= _indicesCount - col2)
-        {
-            SetDoubleBytePadded(true);
-            // Normally this should be something like `col2 + width - _indicesCount`.
-            // But `width` can only ever be either 1 or 2 which means paddingSpaces can only be 1.
-            paddingSpaces = 1;
-            break;
-        }
-
-        do
-        {
-            ch3ref = _indicesAt(col2);
-            _indicesAt(col2) = ch2;
-            ASSERT(_indicesAt(0) == 0);
-            ASSERT(ch2 < 1000);
-            ASSERT(col2 < _indicesCount);
-            ++col2;
-        } while (--width);
-
-        ASSERT(static_cast<uint16_t>(ch2 + advance) > ch2);
-
-        it += advance;
-        ch2 += advance;
-    }
-
-    return paddingSpaces;
-#else
-    UNREFERENCED_PARAMETER(it);
-    UNREFERENCED_PARAMETER(end);
-    UNREFERENCED_PARAMETER(col2);
-    UNREFERENCED_PARAMETER(ch2);
-    abort();
-#endif
-}
-
 void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, const std::wstring_view& chars)
 {
     const auto col1 = clampedUint16(beginIndex);
     const auto col2 = clampedUint16(endIndex);
 
-    if ((col1 >= col2) | (col2 > _indicesCount) | chars.empty())
+    if (col1 >= col2 || col2 > _indicesCount || chars.empty())
     {
         return;
     }
 
     uint16_t col0 = col1;
-    const uint16_t ch0 = _indicesAt(col0);
-    for (; col0 != 0 && _indicesAt(col0 - 1) == ch0; --col0)
+    const uint16_t ch0 = _indexAt(col0);
+    for (; col0 != 0 && _isTrailer(col0); --col0)
     {
     }
+    const uint16_t leadingSpaces = col1 - col0;
 
-    uint16_t col3 = col2 - 1;
-    uint16_t ch3;
+    uint16_t col3 = col2;
+    for (; _isTrailer(col3); ++col3)
     {
-        const uint16_t ch3ref = _indicesAt(col3);
-        while ((ch3 = _indicesAt(++col3)) == ch3ref)
-        {
-        }
     }
+    const uint16_t ch3 = _indexAt(col3);
+    const uint16_t trailingSpaces = col3 - col2;
 
-    const size_t leadingSpaces = col1 - col0;
-    const size_t trailingSpaces = col3 - col2;
     const size_t insertedChars = chars.size() + leadingSpaces + trailingSpaces;
-    const size_t newCh1 = insertedChars + ch0;
+    const size_t ch3new = insertedChars + ch0;
 
-    if (newCh1 != ch3)
+    if (ch3new != ch3)
     {
-        _resizeChars(ch0, ch3, newCh1, col3);
+        _resizeChars(ch0, ch3, ch3new, col3);
     }
 
     {
         auto ch = _charsBegin() + ch0;
         auto in0 = _indicesBegin() + col0;
-        const auto in1 = _indicesBegin() + col1;
+        auto in1 = _indicesBegin() + col1;
         auto in2 = _indicesBegin() + col2;
         const auto in3 = _indicesBegin() + col3;
         auto chPos = ch0;
@@ -516,7 +542,8 @@ void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, 
         }
 
         ch = std::copy_n(chars.data(), chars.size(), ch);
-        std::fill(in1, in2, chPos);
+        *in1++ = chPos;
+        std::fill(in1, in2, gsl::narrow_cast<uint16_t>(chPos | IndicesTrailer));
         chPos += chars.size();
 
         for (; in2 != in3; ++ch, ++in2, ++chPos)
@@ -530,7 +557,7 @@ void ROW::ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, 
 void ROW::_resizeChars(uint16_t ch0, uint16_t ch3, size_t ch3new, uint16_t col3)
 {
     const auto diff = ch3new - ch3;
-    const auto currentLength = _indicesAt(_indicesCount);
+    const auto currentLength = _charsSize();
     const auto newLength = currentLength + diff;
 
     if (newLength <= _charsCapacity)
@@ -592,7 +619,7 @@ uint16_t ROW::size() const noexcept
 til::CoordType ROW::MeasureLeft() const noexcept
 {
     const auto beg = _charsBegin();
-    const auto end = beg + _indicesAt(_indicesCount);
+    const auto end = beg + _charsSize();
     auto it = beg;
 
     for (; it != end; ++it)
@@ -609,7 +636,7 @@ til::CoordType ROW::MeasureLeft() const noexcept
 til::CoordType ROW::MeasureRight() const noexcept
 {
     const auto beg = _charsBegin();
-    const auto end = beg + _indicesAt(_indicesCount);
+    const auto end = beg + _charsSize();
     auto it = end;
 
     for (; it != beg; --it)
@@ -631,7 +658,7 @@ til::CoordType ROW::MeasureRight() const noexcept
 bool ROW::ContainsText() const noexcept
 {
     auto it = _charsBegin();
-    const auto end = it + _indicesAt(_indicesCount);
+    const auto end = it + _charsSize();
 
     for (; it != end; ++it)
     {
@@ -646,29 +673,27 @@ bool ROW::ContainsText() const noexcept
 
 std::wstring_view ROW::GlyphAt(til::CoordType column) const noexcept
 {
-    column = std::min(column, _indicesCount - 1);
+    auto col = clampedColumn(column);
 
-    const auto current = _indicesAt(column);
-    while (column <= _indicesCount && _indicesAt(++column) == current)
+    const auto beg = _indexAt(col);
+    while (_isTrailer(++col))
     {
     }
+    const auto end = _indexAt(col);
 
-    const auto len = gsl::narrow_cast<size_t>(_indicesAt(column) - current);
-    return { _chars + current, len };
+    return { _chars + beg, gsl::narrow_cast<size_t>(end - beg) };
 }
 
 DbcsAttribute ROW::DbcsAttrAt(til::CoordType column) const noexcept
 {
-    column = std::min(column, _indicesCount - 1);
-
-    const auto idx = _indicesAt(column);
+    const auto col = clampedColumn(column);
 
     auto attr = DbcsAttribute::Attribute::Single;
-    if (column > 0 && _indicesAt(column - 1) == idx)
+    if (_isTrailer(col))
     {
         attr = DbcsAttribute::Attribute::Trailing;
     }
-    else if (column < _indicesCount && _indicesAt(column + 1) == idx)
+    else if (_isTrailer(col + 1))
     {
         attr = DbcsAttribute::Attribute::Leading;
     }
@@ -678,14 +703,13 @@ DbcsAttribute ROW::DbcsAttrAt(til::CoordType column) const noexcept
 
 std::wstring_view ROW::GetText() const noexcept
 {
-    return { _chars, _indicesAt(_indicesCount) };
+    return { _chars, _charsSize() };
 }
 
 DelimiterClass ROW::DelimiterClassAt(til::CoordType column, const std::wstring_view& wordDelimiters) const noexcept
 {
-    column = std::min(column, _indicesCount - 1);
-
-    const auto glyph = _charsAt(_indicesAt(column));
+    const auto col = clampedColumn(column);
+    const auto glyph = _charAt(_indexAt(col));
 
     if (glyph <= L' ')
     {

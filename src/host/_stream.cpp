@@ -617,7 +617,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             }
 
             til::CoordType distance;
-            if constexpr (Feature_UnicodeTextSegmentation::IsEnabled())
+            if constexpr (false && Feature_UnicodeTextSegmentation::IsEnabled())
             {
                 auto pos = cursor.GetPosition();
                 distance = textBuffer.Write(pos, std::wstring_view(LocalBuffer, i), Attributes);
