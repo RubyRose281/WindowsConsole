@@ -551,14 +551,14 @@ PVOID ConIoSrvComm::GetSharedViewBase() const noexcept
             try
             {
                 // Create and set the render engine.
-                _bgfxEngine = std::make_unique<BgfxEngine>(
+                _bgfxEngine = new BgfxEngine(
                     GetSharedViewBase(),
                     DisplaySize.bottom / FontSize.Height,
                     DisplaySize.right / FontSize.Width,
                     FontSize.Width,
                     FontSize.Height);
 
-                globals.pRender->AddRenderEngine(_bgfxEngine.get());
+                globals.pRender->AddRenderEngine(_bgfxEngine);
             }
             catch (...)
             {
@@ -577,8 +577,8 @@ PVOID ConIoSrvComm::GetSharedViewBase() const noexcept
 
     try
     {
-        pWddmConEngine = std::make_unique<WddmConEngine>();
-        globals.pRender->AddRenderEngine(pWddmConEngine.get());
+        pWddmConEngine = new WddmConEngine();
+        globals.pRender->AddRenderEngine(pWddmConEngine);
     }
     catch (...)
     {

@@ -9,7 +9,9 @@
 
 #include "inc/ColorFix.hpp"
 
-static constexpr double gMinThreshold = 12.0;
+#include <DirectXMath.h>
+
+static constexpr double gMinThreshold = 20.0;
 static constexpr double gExpThreshold = 20.0;
 static constexpr double gLStep = 5.0;
 
@@ -177,7 +179,7 @@ void ColorFix::_ToRGB()
     var_X = X / 100.; //X from 0 to  95.047      (Observer = 2 degrees, Illuminant = D65)
     var_Y = Y / 100.; //Y from 0 to 100.000
     var_Z = Z / 100.; //Z from 0 to 108.883
-
+    
     auto var_R = var_X * 3.2406 + var_Y * -1.5372 + var_Z * -0.4986;
     auto var_G = var_X * -0.9689 + var_Y * 1.8758 + var_Z * 0.0415;
     auto var_B = var_X * 0.0557 + var_Y * -0.2040 + var_Z * 1.0570;
@@ -201,6 +203,107 @@ void ColorFix::_ToRGB()
 // - The foreground color after performing any necessary changes to make it more perceivable
 COLORREF ColorFix::GetPerceivableColor(COLORREF fg, COLORREF bg)
 {
+#if 1
+    ColorFix x1(fg);
+    ColorFix x2(bg);
+
+    constexpr double kSubL = 1;
+    constexpr double kSubC = 1;
+    constexpr double kSubH = 1;
+
+    // Delta L Prime
+    const auto deltaLPrime = x2.L - x1.L;
+
+    // L Bar
+    const auto lBar = (x1.L + x2.L) / 2;
+
+    // C1 & C2
+    const auto c1 = sqrt(pow(x1.A, 2) + pow(x1.B, 2));
+    const auto c2 = sqrt(pow(x2.A, 2) + pow(x2.B, 2));
+
+    // C Bar
+    const auto cBar = (c1 + c2) / 2;
+
+    // A Prime 1
+    const auto aPrime1 = x1.A + (x1.A / 2) * (1 - sqrt(pow(cBar, 7) / (pow(cBar, 7) + pow(25.0, 7))));
+
+    // A Prime 2
+    const auto aPrime2 = x2.A + (x2.A / 2) * (1 - sqrt(pow(cBar, 7) / (pow(cBar, 7) + pow(25.0, 7))));
+
+    // C Prime 1
+    const auto cPrime1 = sqrt(pow(aPrime1, 2) + pow(x1.B, 2));
+
+    // C Prime 2
+    const auto cPrime2 = sqrt(pow(aPrime2, 2) + pow(x2.B, 2));
+
+    // C Bar Prime
+    const auto cBarPrime = (cPrime1 + cPrime2) / 2;
+
+    // Delta C Prime
+    const auto deltaCPrime = cPrime2 - cPrime1;
+
+    // S sub L
+    const auto sSubL = 1 + ((0.015 * pow(lBar - 50, 2)) / sqrt(20 + pow(lBar - 50, 2)));
+
+    // S sub C
+    const auto sSubC = 1 + 0.045 * cBarPrime;
+
+    // h Prime 1
+    const auto hPrime1 = _GetHPrimeFn(x1.B, aPrime1);
+
+    // h Prime 2
+    const auto hPrime2 = _GetHPrimeFn(x2.B, aPrime2);
+
+    // Delta H Prime
+    const auto deltaHPrime = 0 == c1 || 0 == c2 ? 0 : 2 * sqrt(cPrime1 * cPrime2) * sin(abs(hPrime1 - hPrime2) <= rad180 ? hPrime2 - hPrime1 : (hPrime2 <= hPrime1 ? hPrime2 - hPrime1 + rad360 : hPrime2 - hPrime1 - rad360) / 2);
+
+    // H Bar Prime
+    const auto hBarPrime = (abs(hPrime1 - hPrime2) > rad180) ? (hPrime1 + hPrime2 + rad360) / 2 : (hPrime1 + hPrime2) / 2;
+
+    // T
+    const auto t = 1 - 0.17 * cos(hBarPrime - rad030) + 0.24 * cos(2 * hBarPrime) + 0.32 * cos(3 * hBarPrime + rad006) - 0.20 * cos(4 * hBarPrime - rad063);
+
+    // S sub H
+    const auto sSubH = 1 + 0.015 * cBarPrime * t;
+
+    // R sub T
+    const auto rSubT = -2 * sqrt(pow(cBarPrime, 7) / (pow(cBarPrime, 7) + pow(25.0, 7))) * sin(rad060 * exp(-pow((hBarPrime - rad275) / rad025, 2)));
+
+    // Put it all together!
+    const auto lightness = deltaLPrime / (kSubL * sSubL);
+    const auto chroma = deltaCPrime / (kSubC * sSubC);
+    const auto hue = deltaHPrime / (kSubH * sSubH);
+
+    const auto dEConstant = pow(chroma, 2) + pow(hue, 2) + rSubT * chroma * hue;
+    const auto dESquared = pow(lightness, 2) + dEConstant;
+
+    if (dESquared >= 500)
+    {
+        return fg;
+    }
+
+    auto lightnessDelta = sqrt((500 - dEConstant) * pow(kSubL * sSubL, 2));
+
+    // Prefer darkening the foreground color, if...
+    // the foreground color is darker than the background color.
+    if (x1.L < x2.L)
+    {
+        lightnessDelta = -lightnessDelta;
+    }
+
+    if (const auto l = x2.L + lightnessDelta; l >= 0 && l <= 100)
+    {
+        x1.L = l;
+    }
+    else
+    {
+        x1.L = x2.L - lightnessDelta;
+    }
+    
+    x1._ToRGB();
+    return x1.rgb;
+
+#else
     const ColorFix backLab(bg);
     ColorFix frontLab(fg);
     const auto de1 = _GetDeltaE(frontLab, backLab);
@@ -224,4 +327,5 @@ COLORREF ColorFix::GetPerceivableColor(COLORREF fg, COLORREF bg)
         }
     }
     return frontLab.rgb;
+#endif
 }

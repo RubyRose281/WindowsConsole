@@ -240,7 +240,6 @@ CHARSETINFO
 chcp
 checkbox
 checkboxes
-Checkin
 chh
 Childitem
 chk
@@ -320,7 +319,6 @@ concat
 concfg
 conclnt
 conddkrefs
-condev
 condrv
 conechokey
 conemu
@@ -356,7 +354,6 @@ consolehost
 CONSOLEIME
 consoleinternal
 Consoleroot
-Consolescreen
 CONSOLESETFOREGROUND
 consoletaeftemplates
 CONSOLEV
@@ -420,7 +417,6 @@ Csr
 csrmsg
 CSRSS
 csrutil
-css
 cstdarg
 cstddef
 cstdio
@@ -452,12 +448,12 @@ CURSORCOLOR
 CURSORSIZE
 CURSORTYPE
 CUU
+cvtss
 Cwa
 cwch
 cwchar
 cwctype
 cwd
-cxcy
 CXFRAME
 CXFULLSCREEN
 CXHSCROLL
@@ -510,7 +506,6 @@ DDevice
 DEADCHAR
 dealloc
 Debian
-debolden
 debugtype
 DECAC
 DECALN
@@ -538,7 +533,6 @@ declval
 DECNKM
 DECNRCM
 DECOM
-deconstructed
 DECPCTERM
 DECPS
 DECRC
@@ -548,7 +542,6 @@ DECRQM
 DECRQSS
 DECRQTSR
 DECRST
-DECRSTS
 DECSASD
 DECSC
 DECSCA
@@ -606,7 +599,6 @@ dest
 DESTINATIONNAME
 devblogs
 devicecode
-devicefamily
 devops
 Dext
 DFactory
@@ -640,6 +632,7 @@ Dls
 dmp
 DOCTYPE
 docx
+doi
 DONTCARE
 doskey
 dotnet
@@ -683,7 +676,6 @@ dwriteglyphrundescriptionclustermap
 dxgi
 dxgidwm
 dxinterop
-dxp
 dxsm
 dxttbmp
 Dyreen
@@ -729,7 +721,6 @@ eol
 EPres
 EQU
 ERASEBKGND
-errno
 errorlevel
 ETB
 etcoreapp
@@ -764,7 +755,6 @@ FACESIZE
 failfast
 FAILIFTHERE
 fallthrough
-FARPROC
 fastlink
 fcb
 fcharset
@@ -843,6 +833,8 @@ FRAMECHANGED
 fre
 freopen
 frontend
+FRSQRTE
+FRSQRTS
 fsanitize
 Fscreen
 FSCTL
@@ -900,7 +892,6 @@ GETHUNGAPPTIMEOUT
 GETICON
 GETITEMDATA
 GETKEYBOARDLAYOUTNAME
-GETKEYSTATE
 GETLARGESTWINDOWSIZE
 GETLBTEXT
 getline
@@ -955,7 +946,6 @@ gset
 gsl
 GTP
 GTR
-guardxfg
 guc
 gui
 guidatom
@@ -1021,12 +1011,10 @@ HORZ
 hostable
 hostlib
 HPA
-HPAINTBUFFER
 HPCON
 hpj
 hpp
 HPR
-HPROPSHEETPAGE
 HProvider
 HREDRAW
 hresult
@@ -1070,8 +1058,6 @@ ico
 IComponent
 ICONERROR
 Iconified
-iconify
-Iconify
 ICONINFORMATION
 IConsole
 ICONSTOP
@@ -1169,7 +1155,6 @@ ioctl
 iomanip
 iostream
 iot
-ipa
 ipch
 ipconfig
 IPersist
@@ -1300,7 +1285,6 @@ listproperties
 listptr
 listptrsize
 lld
-LLVM
 llx
 LMENU
 LMNOP
@@ -1327,7 +1311,6 @@ lparen
 LPBYTE
 LPCCH
 lpch
-LPCHARSETINFO
 LPCOLORREF
 LPCPLINFO
 LPCREATESTRUCT
@@ -1372,6 +1355,7 @@ LPWINDOWPOS
 lpwpos
 lpwstr
 LRESULT
+lroundf
 lru
 lsb
 lsconfig
@@ -1404,7 +1388,6 @@ MAKEWORD
 malloc
 manpage
 MAPBITMAP
-MAPVIRTUALKEY
 MAPVK
 MAXDIMENSTRING
 maxing
@@ -1481,7 +1464,6 @@ mscorlib
 msctf
 msctls
 msdata
-MSDL
 msdn
 msft
 MSGCMDLINEF
@@ -1495,7 +1477,6 @@ MSGSELECTMODE
 msiexec
 MSIL
 msix
-mspartners
 msrc
 msvcrt
 MSVCRTD
@@ -1537,7 +1518,6 @@ NCRBUTTONUP
 NCXBUTTONDOWN
 NCXBUTTONUP
 NDEBUG
-ned
 NEL
 NEQ
 netcoreapp
@@ -1545,7 +1525,6 @@ netstandard
 NEWCPLINFO
 NEWCPLINFOA
 NEWCPLINFOW
-newcursor
 Newdelete
 NEWINQUIRE
 NEWINQURE
@@ -1555,7 +1534,6 @@ NEWTEXTMETRICEX
 Newtonsoft
 NEXTLINE
 nfe
-nlength
 Nls
 NLSMODE
 nnn
@@ -1779,7 +1757,6 @@ PDWORD
 pdx
 peb
 PEMAGIC
-PENDTASKMSG
 pfa
 PFACENODE
 pfed
@@ -1793,9 +1770,6 @@ PFS
 pgd
 pgdn
 PGONu
-pgorepro
-pgort
-PGU
 pguid
 pgup
 PHANDLE
@@ -1830,7 +1804,6 @@ PNTSTATUS
 POBJECT
 Podcast
 POINTSLIST
-Poli
 POLYTEXTW
 popd
 POPF
@@ -1850,7 +1823,6 @@ ppf
 ppguid
 ppidl
 pplx
-PPORT
 PPROC
 PPROCESS
 ppropvar
@@ -1916,7 +1888,6 @@ PSINGLE
 psl
 psldl
 psm
-PSMALL
 PSNRET
 PSobject
 psp
@@ -2001,7 +1972,7 @@ redefinable
 Redir
 redirector
 redist
-redistributable
+redmean
 REDSCROLL
 refactor
 refactoring
@@ -2065,6 +2036,7 @@ riid
 Rike
 RIPMSG
 RIS
+rmean
 RMENU
 rng
 roadmap
@@ -2074,6 +2046,8 @@ rparen
 RRF
 RRRGGGBB
 rsas
+rsqrt
+rsqrtf
 rtcore
 RTEXT
 rtf
@@ -2245,7 +2219,6 @@ Solutiondir
 somefile
 SOURCEBRANCH
 sourced
-SOURCESDIRECTORY
 spammy
 spand
 sprintf
@@ -2425,8 +2398,6 @@ THUMBTRACK
 TIcon
 tif
 tilunittests
-Timeline
-timelines
 titlebar
 TITLEISLINKNAME
 TJson
@@ -2444,7 +2415,6 @@ tokenhelpers
 tokenized
 tokenizing
 toolbar
-toolbars
 TOOLINFO
 Toolset
 tooltip
@@ -2603,7 +2573,6 @@ uuidv
 UVWX
 UVWXY
 UWA
-UWAs
 uwp
 uxtheme
 vals
@@ -2631,14 +2600,16 @@ Virt
 VIRTTERM
 Virtualizing
 vkey
-VKKEYSCAN
 VMs
+vmul
 VPA
 VPATH
 VPR
 VProc
 VRaw
 VREDRAW
+vrsqrte
+vrsqrts
 vsc
 vscprintf
 VSCROLL
@@ -2697,10 +2668,8 @@ wcstod
 wcstoul
 wddm
 wddmcon
-wddmconrenderer
 WDDMCONSOLECONTEXT
 wdm
-wdx
 webclient
 webpage
 website
@@ -2735,7 +2704,6 @@ wincontypes
 WINCORE
 windbg
 WINDEF
-windev
 WINDIR
 windll
 WINDOWALPHA
@@ -2818,7 +2786,6 @@ wprintf
 wprp
 wprpi
 wregex
-WResult
 writeback
 writechar
 WRITECONSOLE
@@ -2874,7 +2841,6 @@ xdy
 XEncoding
 xes
 xff
-xfg
 XFile
 XFORM
 XManifest
