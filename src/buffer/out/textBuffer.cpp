@@ -395,6 +395,7 @@ til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, con
 
     for (; !text.empty();)
     {
+        // TODO ENABLE_WRAP_AT_EOL_OUTPUT
         if (x >= width)
         {
             x = 0;
@@ -421,7 +422,7 @@ til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, con
     }
     else
     {
-        TriggerRedraw(Viewport::FromDimensions({ 0, target.y }, { width, y - target.y + 1 }));
+        TriggerRedraw(Viewport::FromDimensions({ 0, target.y }, { width, std::min(y - target.y + 1, _size.Height()) }));
     }
 
     target = { x, y };

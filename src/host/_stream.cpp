@@ -331,17 +331,23 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                                         const DWORD dwFlags,
                                         _Inout_opt_ til::CoordType* const psScrollY)
 {
-#if 0
+#if 1
+                        static constexpr wchar_t tabSpaces[8]{ L' ', L' ', L' ', L' ', L' ', L' ', L' ', L' ' };
+
     try
     {
         UNREFERENCED_PARAMETER(sOriginalXPosition);
         UNREFERENCED_PARAMETER(pwchBuffer);
         UNREFERENCED_PARAMETER(pwchBufferBackupLimit);
 
+        const auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
         auto& textBuffer = screenInfo.GetTextBuffer();
         auto& cursor = textBuffer.GetCursor();
+        const auto textBufferSize = textBuffer.GetSize().Dimensions();
         const auto Attributes = textBuffer.GetCurrentAttributes();
         const auto bufferSize = *pcb / sizeof(wchar_t);
+        auto it = pwchRealUnicode;
+        const auto end = it + bufferSize;
 
         auto cursorPos = cursor.GetPosition();
         if (cursor.IsDelayedEOLWrap() && WI_IsFlagSet(screenInfo.OutputMode, ENABLE_WRAP_AT_EOL_OUTPUT))
@@ -355,34 +361,99 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             }
         }
 
-        std::wstring_view text{ pwchRealUnicode, bufferSize };
         size_t spaces = 0;
 
-        while (!text.empty())
+        for (; it != end;)
         {
-            auto idx = text.find_first_of(L"\r\n");
-            if (idx != 0)
+            const auto nextControlChar = std::find_if(it, end, [](const auto& wch) { return IS_CONTROL_CHAR(wch); });
+            if (nextControlChar != it)
             {
-                idx = std::min(idx, text.size());
-                spaces += textBuffer.Write(cursorPos, text.substr(0, idx), Attributes);
-                text = text.substr(idx);
-                continue;
+                spaces += textBuffer.Write(cursorPos, { it, nextControlChar }, Attributes);
+                it = nextControlChar;
             }
 
-            switch (text[0])
+            for (; it != end && IS_CONTROL_CHAR(*it); ++it)
             {
-            case L'\r':
-                cursorPos.x = 0;
-                break;
-            case L'\n':
-                cursorPos.y++;
-                std::ignore = AdjustCursorPosition(screenInfo, cursorPos, dwFlags & WC_KEEP_CURSOR_VISIBLE, psScrollY);
-                break;
-            default:
-                break;
-            }
+                switch (*it)
+                {
+                case UNICODE_BELL:
+                    if (WI_IsFlagClear(dwFlags, WC_PRINTABLE_CONTROL_CHARS))
+                    {
+                        std::ignore = screenInfo.SendNotifyBeep();
+                        continue;
+                    }
+                    break;
+                case UNICODE_BACKSPACE:
+                    cursorPos.x--;
+                    if (cursorPos.x < 0)
+                    {
+                        if (WI_IsFlagSet(dwFlags, WC_LIMIT_BACKSPACE) || cursorPos.y == 0)
+                        {
+                            cursorPos.x = 0;
+                        }
+                        else
+                        {
+                            cursorPos.x = textBufferSize.width - 1;
+                            cursorPos.y--;
+                            if (WI_IsFlagSet(dwFlags, WC_DESTRUCTIVE_BACKSPACE))
+                            {
+                                textBuffer.GetRowByOffset(cursorPos.y).SetWrapForced(false);
+                            }
+                        }
+                    }
+                    if (WI_IsFlagSet(dwFlags, WC_DESTRUCTIVE_BACKSPACE))
+                    {
+                        // TODO backoff by wide chars
+                        auto pos = cursorPos;
+                        spaces -= textBuffer.Write(pos, { &tabSpaces[0], 1 }, Attributes);
+                    }
+                    continue;
+                case UNICODE_TAB:
+                    if (cursorPos.x >= textBufferSize.width)
+                    {
+                        cursorPos.y++;
+                        cursorPos.x = 0;
+                    }
+                    else
+                    {
+                        const auto cols = NUMBER_OF_SPACES_IN_TAB(1);
+                        cursorPos.x = std::min(cursorPos.x + cols, textBufferSize.width - 1);
+                        spaces += textBuffer.Write(cursorPos, { &tabSpaces[0], cols }, Attributes);
+                    }
+                    continue;
+                case UNICODE_LINEFEED:
+                    textBuffer.GetRowByOffset(cursorPos.y).SetWrapForced(false);
+                    if (gci.IsReturnOnNewlineAutomatic())
+                    {
+                        cursorPos.X = 0;
+                    }
+                    cursorPos.y++;
+                    continue;
+                case UNICODE_CARRIAGERETURN:
+                    cursorPos.x = 0;
+                    continue;
+                default:
+                    break;
+                }
 
-            text = text.substr(1);
+                if (WI_IsFlagSet(dwFlags, WC_PRINTABLE_CONTROL_CHARS))
+                {
+                    const wchar_t wchs[2]{ L'^', static_cast<wchar_t>(*it + L'@') };
+                    spaces += textBuffer.Write(cursorPos, { &wchs[0], 2 }, Attributes);
+                }
+            }
+        }
+
+        if (cursorPos.x >= textBufferSize.width && WI_IsFlagSet(screenInfo.OutputMode, ENABLE_WRAP_AT_EOL_OUTPUT))
+        {
+            cursorPos.x = textBufferSize.width - 1;
+            cursor.DelayEOLWrap(cursorPos);
+        }
+        cursor.SetPosition(cursorPos);
+
+        if (dwFlags & WC_KEEP_CURSOR_VISIBLE)
+        {
+            screenInfo.MakeCursorVisible(cursorPos);
         }
 
         if (pcSpaces)
@@ -390,8 +461,12 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             *pcSpaces = spaces;
         }
 
-        //cursorPos = std::min(cursorPos, textBuffer.GetSize().BottomRightInclusive());
-        return AdjustCursorPosition(screenInfo, cursorPos, dwFlags & WC_KEEP_CURSOR_VISIBLE, psScrollY);
+        if (psScrollY)
+        {
+            *psScrollY = 0;
+        }
+
+        return S_OK;
     }
     NT_CATCH_RETURN()
 #else
@@ -617,7 +692,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             }
 
             til::CoordType distance;
-            if constexpr (false && Feature_UnicodeTextSegmentation::IsEnabled())
+            if constexpr (Feature_UnicodeTextSegmentation::IsEnabled())
             {
                 auto pos = cursor.GetPosition();
                 distance = textBuffer.Write(pos, std::wstring_view(LocalBuffer, i), Attributes);

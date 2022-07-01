@@ -27,7 +27,7 @@ static const UniqueUBreakIterator icuBreakIterator = []() noexcept {
 }();
 #endif
 
-#define DEBUG 1
+#define DEBUG 0
 
 #pragma warning(push, 1)
 
@@ -441,11 +441,15 @@ try
 
     for (uint16_t i = 0; i <= _indicesCount; ++i)
     {
-        ASSERT(_indices[i] <= _charsCapacity);
+        ASSERT(_indexAt(i) <= _charsCapacity);
         if (i)
         {
-            const auto delta = _indices[i] - _indices[i - 1];
+            const auto delta = _indexAt(i) - _indexAt(i - 1);
             ASSERT(delta >= 0 && delta <= 20);
+            if (!delta)
+            {
+                ASSERT(_isTrailer(i));
+            }
         }
     }
 
