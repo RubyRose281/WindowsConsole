@@ -381,25 +381,26 @@ bool TextBuffer::_PrepareForDoubleByteSequence(const DbcsAttribute dbcsAttribute
     return fSuccess;
 }
 
-til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, const TextAttribute& attributes)
+til::point TextBuffer::Write(til::point& target, std::wstring_view text, const TextAttribute& attributes)
 {
-    if (text.empty())
-    {
-        return 0;
-    }
-
     const auto width = GetSize().Width();
     auto x = target.x;
     auto y = target.y;
-    til::CoordType consumed = 0;
+    til::point written;
 
-    for (; !text.empty();)
+    if (text.empty())
+    {
+        return written;
+    }
+
+    do
     {
         // TODO ENABLE_WRAP_AT_EOL_OUTPUT
         if (x >= width)
         {
             x = 0;
             y++;
+            written.y++;
 
             if (y > GetSize().BottomInclusive())
             {
@@ -412,21 +413,24 @@ til::CoordType TextBuffer::Write(til::point& target, std::wstring_view text, con
         const auto newx = row.ReplaceCharacters(x, text);
         row.ReplaceAttributes(x, newx, attributes);
 
-        consumed += newx - x;
+        written.x += newx - x;
         x = newx;
     }
+    while (!text.empty());
 
-    if (y == target.y)
+    if (!written.y)
     {
-        TriggerRedraw(Viewport::FromDimensions(target, { consumed, 1 }));
+        TriggerRedraw(Viewport::FromDimensions(target, { written.x, 1 }));
     }
     else
     {
-        TriggerRedraw(Viewport::FromDimensions({ 0, target.y }, { width, std::min(y - target.y + 1, _size.Height()) }));
+        const auto height = std::min(written.y + 1, _size.Height());
+        const auto vy = target.y - height + 1;
+        TriggerRedraw(Viewport::FromDimensions({ 0, vy }, { width, height }));
     }
 
     target = { x, y };
-    return consumed;
+    return written;
 }
 
 // Routine Description:

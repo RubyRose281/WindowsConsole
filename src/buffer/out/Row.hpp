@@ -92,6 +92,7 @@ public:
     OutputCellIterator WriteCells(OutputCellIterator it, til::CoordType index, std::optional<bool> wrap = std::nullopt, std::optional<til::CoordType> limitRight = std::nullopt);
     bool SetAttrToEnd(til::CoordType beginIndex, TextAttribute attr);
     void ReplaceAttributes(til::CoordType beginIndex, til::CoordType endIndex, const TextAttribute& newAttr);
+    til::CoordType PrecedingColumn(til::CoordType column) const noexcept;
     til::CoordType ReplaceCharacters(til::CoordType beginIndex, std::wstring_view& chars);
     void ReplaceCharacters(til::CoordType beginIndex, til::CoordType endIndex, const std::wstring_view& chars);
 
@@ -131,6 +132,12 @@ private:
     constexpr uint16_t clampedColumn(T v) const noexcept
     {
         return static_cast<uint16_t>(std::max(0, std::min(_indicesCount - 1, v)));
+    }
+
+    template<typename T>
+    constexpr uint16_t clampedColumnExclusive(T v) const noexcept
+    {
+        return static_cast<uint16_t>(std::max(0, std::min<T>(_indicesCount, v)));
     }
 
     // clang-format off

@@ -31,7 +31,7 @@ static const UniqueUBreakIterator icuBreakIterator = []() noexcept {
 
 #pragma warning(push, 1)
 
-RowTextIterator::RowTextIterator(wchar_t* chars, uint16_t* indices, uint16_t indicesCount, uint16_t beg, uint16_t end) noexcept:
+RowTextIterator::RowTextIterator(wchar_t* chars, uint16_t* indices, uint16_t indicesCount, uint16_t beg, uint16_t end) noexcept :
     _chars{ chars },
     _indices{ indices },
     _indicesCount{ indicesCount },
@@ -311,13 +311,22 @@ OutputCellIterator ROW::WriteCells(OutputCellIterator it, const til::CoordType i
 
 bool ROW::SetAttrToEnd(const til::CoordType beginIndex, const TextAttribute attr)
 {
-    _attr.replace(clampedUint16(beginIndex), _attr.size(), attr);
+    _attr.replace(clampedColumn(beginIndex), _attr.size(), attr);
     return true;
 }
 
 void ROW::ReplaceAttributes(const til::CoordType beginIndex, const til::CoordType endIndex, const TextAttribute& newAttr)
 {
-    _attr.replace(clampedUint16(beginIndex), clampedUint16(endIndex), newAttr);
+    _attr.replace(clampedColumn(beginIndex), clampedColumn(endIndex), newAttr);
+}
+
+til::CoordType ROW::PrecedingColumn(til::CoordType column) const noexcept
+{
+    auto col = clampedColumnExclusive(column);
+    while (col != 0 && _isTrailer(--col))
+    {
+    }
+    return col;
 }
 
 til::CoordType ROW::ReplaceCharacters(til::CoordType beginIndex, std::wstring_view& text)
@@ -388,7 +397,7 @@ try
                 //(UEastAsianWidth)u_getIntPropertyValue(input, UCHAR_EAST_ASIAN_WIDTH);
                 auto width = 1 + IsGlyphFullWidth({ &*it, advance });
 
-                if (width >= _indicesCount - col2)
+                if (width > _indicesCount - col2)
                 {
                     SetDoubleBytePadded(true);
                     // Normally this should be something like `col2 + width - _indicesCount`.
@@ -407,6 +416,11 @@ try
 
                 it += advance;
                 ch2 += advance;
+
+                if (col2 == _indicesCount)
+                {
+                    break;
+                }
             }
         }
     }

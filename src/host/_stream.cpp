@@ -332,7 +332,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                                         _Inout_opt_ til::CoordType* const psScrollY)
 {
 #if 1
-                        static constexpr wchar_t tabSpaces[8]{ L' ', L' ', L' ', L' ', L' ', L' ', L' ', L' ' };
+    static constexpr wchar_t tabSpaces[8]{ L' ', L' ', L' ', L' ', L' ', L' ', L' ', L' ' };
 
     try
     {
@@ -348,6 +348,7 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
         const auto bufferSize = *pcb / sizeof(wchar_t);
         auto it = pwchRealUnicode;
         const auto end = it + bufferSize;
+        til::point written;
 
         auto cursorPos = cursor.GetPosition();
         if (cursor.IsDelayedEOLWrap() && WI_IsFlagSet(screenInfo.OutputMode, ENABLE_WRAP_AT_EOL_OUTPUT))
@@ -361,14 +362,12 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             }
         }
 
-        size_t spaces = 0;
-
-        for (; it != end;)
+        while (it != end)
         {
             const auto nextControlChar = std::find_if(it, end, [](const auto& wch) { return IS_CONTROL_CHAR(wch); });
             if (nextControlChar != it)
             {
-                spaces += textBuffer.Write(cursorPos, { it, nextControlChar }, Attributes);
+                written += textBuffer.Write(cursorPos, { it, nextControlChar }, Attributes);
                 it = nextControlChar;
             }
 
@@ -384,50 +383,68 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                     }
                     break;
                 case UNICODE_BACKSPACE:
-                    cursorPos.x--;
-                    if (cursorPos.x < 0)
+                {
+                    const auto wrapsLineUp = cursorPos.x <= 0 && cursorPos.y > 0 && WI_IsFlagClear(dwFlags, WC_LIMIT_BACKSPACE);
+                    if (wrapsLineUp)
                     {
-                        if (WI_IsFlagSet(dwFlags, WC_LIMIT_BACKSPACE) || cursorPos.y == 0)
-                        {
-                            cursorPos.x = 0;
-                        }
-                        else
-                        {
-                            cursorPos.x = textBufferSize.width - 1;
-                            cursorPos.y--;
-                            if (WI_IsFlagSet(dwFlags, WC_DESTRUCTIVE_BACKSPACE))
-                            {
-                                textBuffer.GetRowByOffset(cursorPos.y).SetWrapForced(false);
-                            }
-                        }
+                        cursorPos.y--;
+                        cursorPos.x = textBufferSize.width;
                     }
+
+                    auto& row = textBuffer.GetRowByOffset(cursorPos.y);
+                    // TODO: In case of pwchBufferBackupLimit != pwchBuffer,
+                    // we have to interpret the escape codes in pwchBufferBackupLimit.
+                    // If it contains a \t for instance (which we previously interpreted as up to 8 spaces)
+                    // then we now have to back off 8 spaces instead of just 1. Same for WC_PRINTABLE_CONTROL_CHARS.
+                    cursorPos.x = row.PrecedingColumn(cursorPos.x);
+
                     if (WI_IsFlagSet(dwFlags, WC_DESTRUCTIVE_BACKSPACE))
                     {
-                        // TODO backoff by wide chars
+                        if (wrapsLineUp)
+                        {
+                            row.SetWrapForced(false);
+                        }
+
                         auto pos = cursorPos;
-                        spaces -= textBuffer.Write(pos, { &tabSpaces[0], 1 }, Attributes);
+                        written -= textBuffer.Write(pos, { &tabSpaces[0], 1 }, Attributes);
                     }
                     continue;
+                }
                 case UNICODE_TAB:
+                    // A tab at the end of a line turns into a newline
                     if (cursorPos.x >= textBufferSize.width)
                     {
-                        cursorPos.y++;
+                        // TODO: SetWrapForced(true);
                         cursorPos.x = 0;
+                        cursorPos.y++;
+                        if (cursorPos.y >= textBufferSize.height)
+                        {
+                            cursorPos.y = textBufferSize.height - 1;
+                            textBuffer.IncrementCircularBuffer();
+                        }
                     }
                     else
                     {
-                        const auto cols = NUMBER_OF_SPACES_IN_TAB(1);
-                        cursorPos.x = std::min(cursorPos.x + cols, textBufferSize.width - 1);
-                        spaces += textBuffer.Write(cursorPos, { &tabSpaces[0], cols }, Attributes);
+                        const auto cols = std::min(NUMBER_OF_SPACES_IN_TAB(1), textBufferSize.width - cursorPos.x - 1);
+                        if (cols > 0)
+                        {
+                            written += textBuffer.Write(cursorPos, { &tabSpaces[0], gsl::narrow_cast<size_t>(cols) }, Attributes);
+                        }
                     }
                     continue;
                 case UNICODE_LINEFEED:
                     textBuffer.GetRowByOffset(cursorPos.y).SetWrapForced(false);
                     if (gci.IsReturnOnNewlineAutomatic())
                     {
-                        cursorPos.X = 0;
+                        cursorPos.x = 0;
                     }
+                    cursorPos.x = 0;
                     cursorPos.y++;
+                    if (cursorPos.y >= textBufferSize.height)
+                    {
+                        cursorPos.y = textBufferSize.height - 1;
+                        textBuffer.IncrementCircularBuffer();
+                    }
                     continue;
                 case UNICODE_CARRIAGERETURN:
                     cursorPos.x = 0;
@@ -439,9 +456,19 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
                 if (WI_IsFlagSet(dwFlags, WC_PRINTABLE_CONTROL_CHARS))
                 {
                     const wchar_t wchs[2]{ L'^', static_cast<wchar_t>(*it + L'@') };
-                    spaces += textBuffer.Write(cursorPos, { &wchs[0], 2 }, Attributes);
+                    written += textBuffer.Write(cursorPos, { &wchs[0], 2 }, Attributes);
                 }
             }
+        }
+
+        if (pcSpaces)
+        {
+            *pcSpaces = written.x;
+        }
+
+        if (psScrollY)
+        {
+            *psScrollY = -written.y;
         }
 
         if (cursorPos.x >= textBufferSize.width && WI_IsFlagSet(screenInfo.OutputMode, ENABLE_WRAP_AT_EOL_OUTPUT))
@@ -449,21 +476,16 @@ using Microsoft::Console::VirtualTerminal::StateMachine;
             cursorPos.x = textBufferSize.width - 1;
             cursor.DelayEOLWrap(cursorPos);
         }
-        cursor.SetPosition(cursorPos);
-
-        if (dwFlags & WC_KEEP_CURSOR_VISIBLE)
+        std::ignore = screenInfo.SetCursorPosition(cursorPos, WI_IsFlagSet(dwFlags, WC_KEEP_CURSOR_VISIBLE));
+        if (WI_IsFlagSet(dwFlags, WC_KEEP_CURSOR_VISIBLE))
         {
             screenInfo.MakeCursorVisible(cursorPos);
         }
 
-        if (pcSpaces)
+        if (ServiceLocator::LocateGlobals().pRender != nullptr)
         {
-            *pcSpaces = spaces;
-        }
-
-        if (psScrollY)
-        {
-            *psScrollY = 0;
+            til::point delta{ 0, -written.y };
+            ServiceLocator::LocateGlobals().pRender->TriggerScroll(&delta);
         }
 
         return S_OK;
