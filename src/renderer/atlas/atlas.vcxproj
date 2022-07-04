@@ -36,8 +36,9 @@
       <ObjectFileOutput />
       <HeaderFileOutput>$(OutDir)$(ProjectName)\%(Filename).h</HeaderFileOutput>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <EnableDebuggingInformation>true</EnableDebuggingInformation>
       <AdditionalOptions>/Zpc %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)'=='Release'">/O3 /Qstrip_debug /Qstrip_reflect %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)'=='Release'">/O3 %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
     <FxCompile Include="shader_vs.hlsl">
       <ShaderType>Vertex</ShaderType>
@@ -47,8 +48,9 @@
       <ObjectFileOutput />
       <HeaderFileOutput>$(OutDir)$(ProjectName)\%(Filename).h</HeaderFileOutput>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <EnableDebuggingInformation>true</EnableDebuggingInformation>
       <AdditionalOptions>/Zpc %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)'=='Release'">/O3 /Qstrip_debug /Qstrip_reflect %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)'=='Release'">/O3 %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
   </ItemGroup>
   <Import Project="$(SolutionDir)src\common.build.post.props" />

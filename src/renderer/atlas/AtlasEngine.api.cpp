@@ -267,7 +267,7 @@ CATCH_RETURN()
     RETURN_HR_IF_NULL(E_INVALIDARG, pResult);
 
     wil::com_ptr<IDWriteTextLayout> textLayout;
-    RETURN_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(glyph.data(), gsl::narrow_cast<uint32_t>(glyph.size()), _getTextFormat(false, false), FLT_MAX, FLT_MAX, textLayout.addressof()));
+    RETURN_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(glyph.data(), gsl::narrow_cast<uint32_t>(glyph.size()), _getTextFormat(AtlasEntryKeyAttributes::None), FLT_MAX, FLT_MAX, textLayout.addressof()));
 
     DWRITE_TEXT_METRICS metrics;
     RETURN_IF_FAILED(textLayout->GetMetrics(&metrics));

@@ -64,7 +64,7 @@ try
     // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
     // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
     // > Note that this requirement includes the first frame the app renders with the swap chain.
-    assert(_r.frameLatencyWaitableObjectUsed);
+    assert(debugGeneralPerformance || _r.frameLatencyWaitableObjectUsed);
 
     // > IDXGISwapChain::Present: Partial Presentation (using a dirty rects or scroll) is not supported
     // > for SwapChains created with DXGI_SWAP_EFFECT_DISCARD or DXGI_SWAP_EFFECT_FLIP_DISCARD.
@@ -305,19 +305,18 @@ void AtlasEngine::_processGlyphQueue()
     _r.glyphQueue.clear();
 }
 
-void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
+void AtlasEngine::_drawGlyph(const AtlasEntry& entry) const
 {
-    const auto key = item.key->data();
-    const auto value = item.value->data();
-    const auto coords = &value->coords[0];
-    const auto charsLength = key->charCount;
-    const auto cells = static_cast<u32>(key->attributes.cellCount);
-    const auto textFormat = _getTextFormat(key->attributes.bold, key->attributes.italic);
-    const auto coloredGlyph = WI_IsFlagSet(value->flags, CellFlags::ColoredGlyph);
+    const auto key = entry.key();
+    const auto coords = entry.coords();
+    const auto charsLength = key.charCount;
+    const auto cells = static_cast<u32>(key.coordCount);
+    const auto textFormat = _getTextFormat(key.attributes);
+    const auto coloredGlyph = WI_IsFlagSet(entry.flags, MetaFlags::ColoredGlyph);
 
     // See D2DFactory::DrawText
     wil::com_ptr<IDWriteTextLayout> textLayout;
-    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&key->chars[0], charsLength, textFormat, cells * _r.cellSizeDIP.x, _r.cellSizeDIP.y, textLayout.addressof()));
+    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&key.chars[0], charsLength, textFormat, cells * _r.cellSizeDIP.x, _r.cellSizeDIP.y, textLayout.addressof()));
     if (_r.typography)
     {
         textLayout->SetTypography(_r.typography.get(), { 0, charsLength });
@@ -346,7 +345,7 @@ void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
     _r.d2dRenderTarget->DrawTextLayout({}, textLayout.get(), _r.brush.get(), options);
     THROW_IF_FAILED(_r.d2dRenderTarget->EndDraw());
 
-    for (uint32_t i = 0; i < cells; ++i)
+    for (u32 i = 0; i < cells; ++i)
     {
         // Specifying NO_OVERWRITE means that the system can assume that existing references to the surface that
         // may be in flight on the GPU will not be affected by the update, so the copy can proceed immediately

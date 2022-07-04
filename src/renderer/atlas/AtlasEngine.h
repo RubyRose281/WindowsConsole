@@ -243,6 +243,26 @@ namespace Microsoft::Console::Render
                 return _size;
             }
 
+            T* begin() noexcept
+            {
+                return _data;
+            }
+
+            T* begin() const noexcept
+            {
+                return _data;
+            }
+
+            T* end() noexcept
+            {
+                return _data + _size;
+            }
+
+            T* end() const noexcept
+            {
+                return _data + _size;
+            }
+
         private:
             // These two functions don't need to use scoped objects or standard allocators,
             // since this class is in fact an scoped allocator object itself.
@@ -278,103 +298,6 @@ namespace Microsoft::Console::Render
             size_t _size = 0;
         };
 
-        // This structure works similar to how std::string works:
-        // You can think of a std::string as a structure consisting of:
-        //   char*  data;
-        //   size_t size;
-        //   size_t capacity;
-        // where data is some backing memory allocated on the heap.
-        //
-        // But std::string employs an optimization called "small string optimization" (SSO).
-        // To simplify things it could be explained as:
-        // If the string capacity is small, then the characters are stored inside the "data"
-        // pointer and you make sure to set the lowest bit in the pointer one way or another.
-        // Heap allocations are always aligned by at least 4-8 bytes on any platform.
-        // If the address of the "data" pointer is not even you know data is stored inline.
-        template<typename T>
-        union SmallObjectOptimizer
-        {
-            static_assert(std::is_trivially_copyable_v<T>);
-            static_assert(std::has_unique_object_representations_v<T>);
-
-            T* allocated = nullptr;
-            T inlined;
-
-            constexpr SmallObjectOptimizer() = default;
-
-            SmallObjectOptimizer(const SmallObjectOptimizer& other)
-            {
-                const auto otherData = other.data();
-                const auto otherSize = other.size();
-                const auto data = initialize(otherSize);
-                memcpy(data, otherData, otherSize);
-            }
-
-            SmallObjectOptimizer& operator=(const SmallObjectOptimizer& other)
-            {
-                if (this != &other)
-                {
-                    delete this;
-                    new (this) SmallObjectOptimizer(other);
-                }
-                return &this;
-            }
-
-            SmallObjectOptimizer(SmallObjectOptimizer&& other) noexcept
-            {
-                memcpy(this, &other, std::max(sizeof(allocated), sizeof(inlined)));
-                other.allocated = nullptr;
-            }
-
-            SmallObjectOptimizer& operator=(SmallObjectOptimizer&& other) noexcept
-            {
-                return *new (this) SmallObjectOptimizer(other);
-            }
-
-            ~SmallObjectOptimizer()
-            {
-                if (!is_inline())
-                {
-#pragma warning(suppress : 26408) // Avoid malloc() and free(), prefer the nothrow version of new with delete (r.10).
-                    free(allocated);
-                }
-            }
-
-            T* initialize(size_t byteSize)
-            {
-                if (would_inline(byteSize))
-                {
-                    return &inlined;
-                }
-
-#pragma warning(suppress : 26408) // Avoid malloc() and free(), prefer the nothrow version of new with delete (r.10).
-                allocated = THROW_IF_NULL_ALLOC(static_cast<T*>(malloc(byteSize)));
-                return allocated;
-            }
-
-            constexpr bool would_inline(size_t byteSize) const noexcept
-            {
-                return byteSize <= sizeof(T);
-            }
-
-            bool is_inline() const noexcept
-            {
-                // VSO-1430353: __builtin_bitcast crashes the compiler under /permissive-. (BODGY)
-#pragma warning(suppress : 26490) // Don't use reinterpret_cast (type.1).
-                return (reinterpret_cast<uintptr_t>(allocated) & 1) != 0;
-            }
-
-            const T* data() const noexcept
-            {
-                return is_inline() ? &inlined : allocated;
-            }
-
-            size_t size() const noexcept
-            {
-                return is_inline() ? sizeof(inlined) : _msize(allocated);
-            }
-        };
-
         struct FontMetrics
         {
             wil::com_ptr<IDWriteFontCollection> fontCollection;
@@ -392,143 +315,341 @@ namespace Microsoft::Console::Render
         // If you change this be sure to copy it over to shader_ps.hlsl.
         //
         // clang-format off
-        enum class CellFlags : u32
+        enum class MetaFlags : u32
         {
             None            = 0x00000000,
-            Inlined         = 0x00000001,
+            Initialized     = 0x00000001,
+            HeapdKey        = 0x00000002,
+            HeapdCoords     = 0x00000004,
 
-            ColoredGlyph    = 0x00000002,
+            ColoredGlyph    = 0x00000008,
 
-            Cursor          = 0x00000008,
-            Selected        = 0x00000010,
+            Cursor          = 0x00000010,
+            Selected        = 0x00000020,
 
-            BorderLeft      = 0x00000020,
-            BorderTop       = 0x00000040,
-            BorderRight     = 0x00000080,
-            BorderBottom    = 0x00000100,
-            Underline       = 0x00000200,
-            UnderlineDotted = 0x00000400,
-            UnderlineDouble = 0x00000800,
-            Strikethrough   = 0x00001000,
+            BorderLeft      = 0x00000040,
+            BorderTop       = 0x00000080,
+            BorderRight     = 0x00000100,
+            BorderBottom    = 0x00000200,
+            Underline       = 0x00000400,
+            UnderlineDotted = 0x00000800,
+            UnderlineDouble = 0x00001000,
+            Strikethrough   = 0x00002000,
         };
         // clang-format on
-        ATLAS_FLAG_OPS(CellFlags, u32)
+        ATLAS_FLAG_OPS(MetaFlags, u32)
 
         // This structure is shared with the GPU shader and needs to follow certain alignment rules.
         // You can generally assume that only u32 or types of that alignment are allowed.
         struct Cell
         {
             alignas(u32) u16x2 tileIndex;
-            alignas(u32) CellFlags flags = CellFlags::None;
+            alignas(u32) MetaFlags flags = MetaFlags::None;
             u32x2 color;
         };
 
-        struct AtlasKeyAttributes
+        enum class AtlasEntryKeyAttributes : u16
         {
-            u16 inlined : 1;
-            u16 bold : 1;
-            u16 italic : 1;
-            u16 cellCount : 13;
-
-            ATLAS_POD_OPS(AtlasKeyAttributes)
+            None = 0x0,
+            Intense = 0x1,
+            Italic = 0x2,
+            // The Intense and Italic flags are used to directly index into arrays.
+            // If you ever add more flags here, make sure to fix _getTextFormat()
+            // and _getTextFormatAxis() and to add a `& 3` mask for instance.
         };
+        ATLAS_FLAG_OPS(AtlasEntryKeyAttributes, u16)
 
-        struct AtlasKeyData
+        struct AtlasEntryKey
         {
-            AtlasKeyAttributes attributes;
+            AtlasEntryKeyAttributes attributes;
             u16 charCount;
-            wchar_t chars[14];
+            u16 coordCount;
+            wchar_t chars[13];
         };
 
-        struct AtlasKey
+        struct alignas(std::hardware_destructive_interference_size) AtlasEntry
         {
-            AtlasKey(AtlasKeyAttributes attributes, u16 charCount, const wchar_t* chars)
+            // The ordering of the fields is chosen in this rather unsightly way so that this struct is optimally compact
+            // and fits on a single cache line (unless it's x86, which I didn't pay any mind to still optimize for).
+            u32 hash = 0;
+            MetaFlags flags = MetaFlags::None;
+            union
             {
-                const auto size = dataSize(charCount);
-                const auto data = _data.initialize(size);
-                attributes.inlined = _data.would_inline(size);
-                data->attributes = attributes;
-                data->charCount = charCount;
-                memcpy(&data->chars[0], chars, static_cast<size_t>(charCount) * sizeof(AtlasKeyData::chars[0]));
-            }
+                AtlasEntryKey* allocatedKey = nullptr;
+                AtlasEntryKey inlineKey;
+            };
+            union
+            {
+                u16x2* allocatedCoords = nullptr;
+                u16x2 inlineCoords[2];
+            };
+            AtlasEntry* prev = nullptr;
+            AtlasEntry* next = nullptr;
 
-            const AtlasKeyData* data() const noexcept
-            {
-                return _data.data();
-            }
+            AtlasEntry() = default;
 
-            size_t hash() const noexcept
+            AtlasEntry(AtlasEntryKeyAttributes attributes, u16 charCount, u16 coordCount, const wchar_t* chars)
             {
-                const auto d = data();
+                // _emplaceGlyph has a Expects() assertions for this, which isn't compiled out in Release mode.
+                // If charCount was 0 our memset()/memcpy() code below would fail.
+                assert(charCount != 0);
+                assert(coordCount != 0);
+
+                // hash_data() only works with data fully aligned to u32 (including the length).
+                const auto totalSize = nextMultipleOf(keySize(charCount), sizeof(u32));
+
+                auto key = &inlineKey;
+                if (charCount > std::size(inlineKey.chars))
+                {
+                    key = THROW_IF_NULL_ALLOC(static_cast<AtlasEntryKey*>(malloc(totalSize)));
+                    allocatedKey = key;
+                    WI_SetFlag(flags, MetaFlags::HeapdKey);
+                }
+
+                key->attributes = attributes;
+                key->charCount = charCount;
+                key->coordCount = coordCount;
+
+                // The hash_data() function only accepts data/length aligned by u32
+                // and our chars are made up of wchar_t/u16.
+                // --> We need to memset() the last u16 word in our key->chars
+                //     because we might otherwise hash uninitialized data.
+                {
+                    const auto data = reinterpret_cast<u8*>(&key->chars[0]);
+                    const auto length = sizeof(wchar_t) * charCount;
+                    memset(&data[length - 2], 0, 2);
+                    memcpy(data, chars, length);
+                }
+
 #pragma warning(suppress : 26490) // Don't use reinterpret_cast (type.1).
-                return std::_Fnv1a_append_bytes(std::_FNV_offset_basis, reinterpret_cast<const u8*>(d), dataSize(d->charCount));
+                hash = hash_data(reinterpret_cast<const u8*>(key), totalSize);
             }
 
-            bool operator==(const AtlasKey& rhs) const noexcept
+            // Second part of the constructor
+            u16x2* finalize(MetaFlags additionalFlags, u16 coordCount)
             {
-                const auto a = data();
-                const auto b = rhs.data();
-                return a->charCount == b->charCount && memcmp(a, b, dataSize(a->charCount)) == 0;
+                auto coords = &inlineCoords[0];
+                if (coordCount > std::size(inlineCoords))
+                {
+                    coords = THROW_IF_NULL_ALLOC(static_cast<u16x2*>(malloc(sizeof(u16x2) * coordCount)));
+                    allocatedCoords = coords;
+                    WI_SetFlag(additionalFlags, MetaFlags::HeapdCoords);
+                }
+                flags |= additionalFlags | MetaFlags::Initialized;
+                return coords;
+            }
+
+            ~AtlasEntry()
+            {
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
+                {
+                    free(allocatedKey);
+                }
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
+                {
+                    free(allocatedCoords);
+                }
+            }
+
+            AtlasEntry(const AtlasEntry& other)
+            {
+                *this = other;
+            }
+
+            AtlasEntry& operator=(const AtlasEntry& other) noexcept
+            {
+                if (this == &other)
+                {
+                    return *this;
+                }
+
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
+                {
+                    free(allocatedKey);
+                }
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
+                {
+                    free(allocatedCoords);
+                }
+
+                memcpy(this, &other, sizeof(AtlasEntry));
+
+                bool allocFailure = false;
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
+                {
+                    allocatedKey = static_cast<AtlasEntryKey*>(mallocClone(other.allocatedKey));
+                    allocFailure |= !allocatedKey;
+                }
+                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
+                {
+                    allocatedCoords = static_cast<u16x2*>(mallocClone(other.allocatedCoords));
+                    allocFailure |= !allocatedCoords;
+                }
+                if (allocFailure)
+                {
+                    memset(this, 0, sizeof(AtlasEntry));
+                    THROW_IF_NULL_ALLOC(nullptr);
+                }
+
+                return *this;
+            }
+
+            AtlasEntry(AtlasEntry&& other) noexcept
+            {
+                *this = std::move(other);
+            }
+
+            AtlasEntry& operator=(AtlasEntry&& other) noexcept
+            {
+                if (this != &other)
+                {
+                    memcpy(this, &other, sizeof(AtlasEntry));
+                    memset(&other, 0, sizeof(AtlasEntry));
+                }
+                return *this;
+            }
+
+            bool operator==(const AtlasEntry& other) const noexcept
+            {
+                const auto& a = key();
+                const auto& b = other.key();
+                const auto al = keySize(a.charCount);
+                const auto bl = keySize(b.charCount);
+                return al == bl && memcmp(&a, &b, al) == 0;
+            }
+
+            const AtlasEntryKey& key() const noexcept
+            {
+                return WI_IsFlagClear(flags, MetaFlags::HeapdKey) ? inlineKey : *allocatedKey;
+            }
+
+            const u16x2* coords() const noexcept
+            {
+                return WI_IsFlagClear(flags, MetaFlags::HeapdCoords) ? &inlineCoords[0] : allocatedCoords;
             }
 
         private:
-            SmallObjectOptimizer<AtlasKeyData> _data;
-
-            static constexpr size_t dataSize(u16 charCount) noexcept
+            static void* mallocClone(void* ref)
             {
-                // This returns the actual byte size of a AtlasKeyData struct for the given charCount.
-                // The `wchar_t chars[2]` is only a buffer for the inlined variant after
-                // all and the actual charCount can be smaller or larger. Due to this we
-                // remove the size of the `chars` array and add it's true length on top.
-                return sizeof(AtlasKeyData) - sizeof(AtlasKeyData::chars) + static_cast<size_t>(charCount) * sizeof(AtlasKeyData::chars[0]);
-            }
-        };
-
-        struct AtlasKeyHasher
-        {
-            size_t operator()(const AtlasKey& key) const noexcept
-            {
-                return key.hash();
-            }
-        };
-
-        struct AtlasValueData
-        {
-            CellFlags flags = CellFlags::None;
-            u16x2 coords[7];
-        };
-
-        struct AtlasValue
-        {
-            constexpr AtlasValue() = default;
-
-            u16x2* initialize(CellFlags flags, u16 cellCount)
-            {
-                const auto size = dataSize(cellCount);
-                const auto data = _data.initialize(size);
-                WI_SetFlagIf(flags, CellFlags::Inlined, _data.would_inline(size));
-                data->flags = flags;
-                return &data->coords[0];
+                const auto size = _msize(ref);
+                const auto data = malloc(size);
+                if (data)
+                {
+                    memcpy(data, ref, size);
+                }
+                return data;
             }
 
-            const AtlasValueData* data() const noexcept
+            static constexpr size_t keySize(size_t charCount) noexcept
             {
-                return _data.data();
+                return sizeof(AtlasEntryKey) - sizeof(AtlasEntryKey::chars) + sizeof(wchar_t) * charCount;
+            }
+
+            static constexpr size_t nextMultipleOf(size_t n, size_t powerOf2) noexcept
+            {
+                return (n + powerOf2 - 1) & ~(powerOf2 - 1);
+            }
+
+            static u32 hash_data(const u8* beg, size_t length) noexcept
+            {
+                // This hash function only works with data fully aligned to u32 (including the length).
+                assert(til::bit_cast<uintptr_t>(beg) % sizeof(u32) == 0);
+                assert(length % sizeof(u32) == 0);
+
+                const auto end = beg + length;
+
+                // This loop is a simple LCG (linear congruential generator) with Donald Knuth's
+                // widely used parameters. Unlike with normal LCGs however we mix in
+                // 4 bytes of the input on each iteration using a simple XOR.
+                auto h = UINT64_C(0x243F6A8885A308D3); // fractional digits of pi in hex (OEIS: A062964)
+                for (; beg != end; beg += sizeof(u32))
+                {
+                    // Neither x64 nor ARM64 assembly differentiates between aligned and unaligned loads.
+                    // As such we can freely use the standard compliant way of reading u8*: memcpy().
+                    // (In Release mode this should be inlined to a single instruction.)
+                    u32 v;
+                    memcpy(&v, beg, sizeof(u32));
+                    h = (h ^ v) * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+                }
+
+                // PCG (permuted congruential generator) XSL-RR finalizer.
+                // In testing it seemed sufficient for our purpose of a hash-map key.
+                //
+                // Copyright 2014-2017 Melissa O'Neill <oneill@pcg-random.org>, and the PCG Project contributors.
+                // See oss/pcg/LICENSE-MIT.txt, oss/pcg/LICENSE-APACHE.txt or https://www.pcg-random.org/.
+                const int r = h & 63;
+                const auto x = gsl::narrow_cast<u32>(h >> 32) ^ gsl::narrow_cast<u32>(h);
+                return _rotl(x, r);
+            }
+        };
+        static_assert(sizeof(AtlasEntry) == 64);
+
+        struct BoringHashset
+        {
+            AtlasEntry& emplace(AtlasEntry&& entry, bool& inserted)
+            {
+                if (size > entries.size() / 2)
+                {
+                    std::vector<AtlasEntry> newEntries{ entries.size() * 2 };
+                    const auto newMask = (mask << 1) | 1;
+
+                    for (auto& it : entries)
+                    {
+                        if (it.key().charCount != 0)
+                        {
+                            for (auto i = it.hash;; ++i)
+                            {
+                                const auto target = &newEntries[i & newMask];
+                                if (target->key().charCount == 0)
+                                {
+                                    *target = std::move(it);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    this->entries = std::move(newEntries);
+                    this->mask = newMask;
+                }
+
+                AtlasEntry* it;
+
+                for (auto i = entry.hash;; ++i)
+                {
+                    it = &entries[i & mask];
+                    if (*it == entry)
+                    {
+                        inserted = false;
+                        break;
+                    }
+                    if (it->flags == MetaFlags::None)
+                    {
+                        *it = std::move(entry);
+                        size++;
+                        inserted = true;
+                        break;
+                    }
+                }
+
+                if (!tail)
+                {
+                    tail = it;
+                }
+                if (head)
+                {
+                    head->next = it;
+                }
+                head = it;
+                return *it;
             }
 
         private:
-            SmallObjectOptimizer<AtlasValueData> _data;
-
-            static constexpr size_t dataSize(u16 coordCount) noexcept
-            {
-                return sizeof(AtlasValueData) - sizeof(AtlasValueData::coords) + static_cast<size_t>(coordCount) * sizeof(AtlasValueData::coords[0]);
-            }
-        };
-
-        struct AtlasQueueItem
-        {
-            const AtlasKey* key;
-            const AtlasValue* value;
+            AtlasEntry* tail = nullptr;
+            AtlasEntry* head = nullptr;
+            std::vector<AtlasEntry> entries{ 64 };
+            size_t size = 0;
+            u32 mask = 63;
         };
 
         struct CachedCursorOptions
@@ -543,7 +664,7 @@ namespace Microsoft::Console::Render
         struct BufferLineMetadata
         {
             u32x2 colors;
-            CellFlags flags = CellFlags::None;
+            MetaFlags flags = MetaFlags::None;
         };
 
         // NOTE: D3D constant buffers sizes must be a multiple of 16 bytes.
@@ -609,10 +730,10 @@ namespace Microsoft::Console::Render
         __declspec(noinline) void _createSwapChain();
         __declspec(noinline) void _recreateSizeDependentResources();
         __declspec(noinline) void _recreateFontDependentResources();
-        IDWriteTextFormat* _getTextFormat(bool bold, bool italic) const noexcept;
-        const Buffer<DWRITE_FONT_AXIS_VALUE>& _getTextFormatAxis(bool bold, bool italic) const noexcept;
+        IDWriteTextFormat* _getTextFormat(AtlasEntryKeyAttributes attributes) const noexcept;
+        const Buffer<DWRITE_FONT_AXIS_VALUE>& _getTextFormatAxis(AtlasEntryKeyAttributes attributes) const noexcept;
         Cell* _getCell(u16 x, u16 y) noexcept;
-        void _setCellFlags(u16r coords, CellFlags mask, CellFlags bits) noexcept;
+        void _setCellFlags(u16r coords, MetaFlags mask, MetaFlags bits) noexcept;
         u16x2 _allocateAtlasTile() noexcept;
         void _flushBufferLine();
         void _emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, size_t bufferPos2);
@@ -628,13 +749,12 @@ namespace Microsoft::Console::Render
         void _adjustAtlasSize();
         void _reserveScratchpadSize(u16 minWidth);
         void _processGlyphQueue();
-        void _drawGlyph(const AtlasQueueItem& item) const;
+        void _drawGlyph(const AtlasEntry& entry) const;
         void _drawCursor();
         void _copyScratchpadTile(uint32_t scratchpadIndex, u16x2 target, uint32_t copyFlags = 0) const noexcept;
 
         static constexpr bool debugGlyphGenerationPerformance = false;
         static constexpr bool debugGeneralPerformance = false || debugGlyphGenerationPerformance;
-        static constexpr bool continuousRedraw = false || debugGeneralPerformance;
 
         static constexpr u16 u16min = 0x0000;
         static constexpr u16 u16max = 0xffff;
@@ -679,8 +799,8 @@ namespace Microsoft::Console::Render
             wil::com_ptr<ID3D11Texture2D> atlasScratchpad;
             wil::com_ptr<ID2D1RenderTarget> d2dRenderTarget;
             wil::com_ptr<ID2D1Brush> brush;
-            wil::com_ptr<IDWriteTextFormat> textFormats[2][2];
-            Buffer<DWRITE_FONT_AXIS_VALUE> textFormatAxes[2][2];
+            wil::com_ptr<IDWriteTextFormat> textFormats[4];
+            Buffer<DWRITE_FONT_AXIS_VALUE> textFormatAxes[4];
             wil::com_ptr<IDWriteTypography> typography;
 
             Buffer<Cell, 32> cells; // invalidated by ApiInvalidations::Size
@@ -696,8 +816,8 @@ namespace Microsoft::Console::Render
             u16x2 atlasSizeInPixelLimit; // invalidated by ApiInvalidations::Font
             u16x2 atlasSizeInPixel; // invalidated by ApiInvalidations::Font
             u16x2 atlasPosition;
-            std::unordered_map<AtlasKey, AtlasValue, AtlasKeyHasher> glyphs;
-            std::vector<AtlasQueueItem> glyphQueue;
+            BoringHashset glyphs;
+            std::vector<AtlasEntry> glyphQueue;
 
             f32 gamma = 0;
             f32 cleartypeEnhancedContrast = 0;
@@ -741,9 +861,9 @@ namespace Microsoft::Console::Render
             // UpdateDrawingBrushes()
             u32 backgroundOpaqueMixin = 0xff000000; // changes are flagged as ApiInvalidations::Device
             u32x2 currentColor;
-            AtlasKeyAttributes attributes{};
+            AtlasEntryKeyAttributes attributes = AtlasEntryKeyAttributes::None;
             u16x2 lastPaintBufferLineCoord;
-            CellFlags flags = CellFlags::None;
+            MetaFlags flags = MetaFlags::None;
             // SetSelectionBackground()
             u32 selectionColor = 0x7fffffff;
             // UpdateHyperlinkHoveredId()
