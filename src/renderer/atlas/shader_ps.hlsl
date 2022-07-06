@@ -5,27 +5,27 @@
 
 #define INVALID_COLOR 0xffffffff
 
-// These flags are shared with AtlasEngine::MetaFlags.
+// These flags are shared with AtlasEngine::CellFlags.
 //
 // clang-format off
-#define MetaFlags_None            0x00000000
-#define MetaFlags_Occupied        0x00000001
-#define MetaFlags_HeapdKey        0x00000002
-#define MetaFlags_HeapdCoords     0x00000004
+#define CellFlags_None            0x00000000
+#define CellFlags_Occupied        0x00000001
+#define CellFlags_HeapdKey        0x00000002
+#define CellFlags_HeapdCoords     0x00000004
 
-#define MetaFlags_ColoredGlyph    0x00000008
+#define CellFlags_ColoredGlyph    0x00000008
 
-#define MetaFlags_Cursor          0x00000010
-#define MetaFlags_Selected        0x00000020
+#define CellFlags_Cursor          0x00000010
+#define CellFlags_Selected        0x00000020
 
-#define MetaFlags_BorderLeft      0x00000040
-#define MetaFlags_BorderTop       0x00000080
-#define MetaFlags_BorderRight     0x00000100
-#define MetaFlags_BorderBottom    0x00000200
-#define MetaFlags_Underline       0x00000400
-#define MetaFlags_UnderlineDotted 0x00000800
-#define MetaFlags_UnderlineDouble 0x00001000
-#define MetaFlags_Strikethrough   0x00002000
+#define CellFlags_BorderLeft      0x00000040
+#define CellFlags_BorderTop       0x00000080
+#define CellFlags_BorderRight     0x00000100
+#define CellFlags_BorderBottom    0x00000200
+#define CellFlags_Underline       0x00000400
+#define CellFlags_UnderlineDotted 0x00000800
+#define CellFlags_UnderlineDouble 0x00001000
+#define CellFlags_Strikethrough   0x00002000
 // clang-format on
 
 // According to Nvidia's "Understanding Structured Buffer Performance" guide
@@ -97,7 +97,7 @@ float4 main(float4 pos: SV_Position): SV_Target
 
     // Layer 1 (optional):
     // Colored cursors are drawn "in between" the background color and the text of a cell.
-    [branch] if (cell.flags & MetaFlags_Cursor)
+    [branch] if (cell.flags & CellFlags_Cursor)
     {
         [flatten] if (cursorColor != INVALID_COLOR)
         {
@@ -110,14 +110,14 @@ float4 main(float4 pos: SV_Position): SV_Target
 
     // Layer 2:
     // Step 1: Underlines
-    [branch] if (cell.flags & MetaFlags_Underline)
+    [branch] if (cell.flags & CellFlags_Underline)
     {
         [flatten] if (cellPos.y >= underlinePos.x && cellPos.y < underlinePos.y)
         {
             color = alphaBlendPremultiplied(color, fg);
         }
     }
-    [branch] if (cell.flags & MetaFlags_UnderlineDotted)
+    [branch] if (cell.flags & CellFlags_UnderlineDotted)
     {
         [flatten] if (cellPos.y >= underlinePos.x && cellPos.y < underlinePos.y && (viewportPos.x / (underlinePos.y - underlinePos.x) & 3) == 0)
         {
@@ -128,7 +128,7 @@ float4 main(float4 pos: SV_Position): SV_Target
     {
         float4 glyph = glyphs[decodeU16x2(cell.glyphPos) + cellPos];
 
-        [branch] if (cell.flags & MetaFlags_ColoredGlyph)
+        [branch] if (cell.flags & CellFlags_ColoredGlyph)
         {
             color = alphaBlendPremultiplied(color, glyph);
         }
@@ -155,7 +155,7 @@ float4 main(float4 pos: SV_Position): SV_Target
         }
     }
     // Step 3: Lines, but not "under"lines
-    [branch] if (cell.flags & MetaFlags_Strikethrough)
+    [branch] if (cell.flags & CellFlags_Strikethrough)
     {
         [flatten] if (cellPos.y >= strikethroughPos.x && cellPos.y < strikethroughPos.y)
         {
@@ -165,7 +165,7 @@ float4 main(float4 pos: SV_Position): SV_Target
 
     // Layer 3 (optional):
     // Uncolored cursors are used as a mask that inverts the cells color.
-    [branch] if (cell.flags & MetaFlags_Cursor)
+    [branch] if (cell.flags & CellFlags_Cursor)
     {
         [flatten] if (cursorColor == INVALID_COLOR && glyphs[cellPos].a != 0)
         {
@@ -175,7 +175,7 @@ float4 main(float4 pos: SV_Position): SV_Target
 
     // Layer 4:
     // The current selection is drawn semi-transparent on top.
-    [branch] if (cell.flags & MetaFlags_Selected)
+    [branch] if (cell.flags & CellFlags_Selected)
     {
         color = alphaBlendPremultiplied(color, decodeRGBA(selectionColor));
     }

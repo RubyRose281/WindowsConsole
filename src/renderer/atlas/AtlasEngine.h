@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <span>
 #include <d2d1.h>
 #include <d3d11_1.h>
 #include <dwrite_3.h>
@@ -181,18 +182,19 @@ namespace Microsoft::Console::Render
                 _data{ allocate(size) },
                 _size{ size }
             {
+                std::uninitialized_default_construct_n(_data, _size);
             }
 
             Buffer(const T* data, size_t size) :
                 _data{ allocate(size) },
                 _size{ size }
             {
-                static_assert(std::is_trivially_copyable_v<T>);
-                memcpy(_data, data, size * sizeof(T));
+                std::uninitialized_copy_n(data, size * sizeof(T), _data);
             }
 
             ~Buffer()
             {
+                std::destroy_n(_data, _size);
                 deallocate(_data);
             }
 
@@ -205,7 +207,7 @@ namespace Microsoft::Console::Render
 #pragma warning(suppress : 26432) // If you define or delete any default operation in the type '...', define or delete them all (c.21).
             Buffer& operator=(Buffer&& other) noexcept
             {
-                deallocate(_data);
+                ~Buffer();
                 _data = std::exchange(other._data, nullptr);
                 _size = std::exchange(other._size, 0);
                 return *this;
@@ -315,40 +317,40 @@ namespace Microsoft::Console::Render
         // If you change this be sure to copy it over to shader_ps.hlsl.
         //
         // clang-format off
-        enum class MetaFlags : u32
+        enum class CellFlags : u32
         {
             None            = 0x00000000,
-            Initialized     = 0x00000001,
-            HeapdKey        = 0x00000002,
-            HeapdCoords     = 0x00000004,
 
-            ColoredGlyph    = 0x00000008,
+            Alive           = 0x00000001,
+            Tombstone       = 0x00000002,
+            HeapdKey        = 0x00000004,
+            HeapdCoords     = 0x00000008,
 
-            Cursor          = 0x00000010,
-            Selected        = 0x00000020,
-
-            BorderLeft      = 0x00000040,
-            BorderTop       = 0x00000080,
-            BorderRight     = 0x00000100,
-            BorderBottom    = 0x00000200,
-            Underline       = 0x00000400,
-            UnderlineDotted = 0x00000800,
-            UnderlineDouble = 0x00001000,
-            Strikethrough   = 0x00002000,
+            ColoredGlyph    = 0x00000010,
+            Cursor          = 0x00000020,
+            Selected        = 0x00000040,
+            BorderLeft      = 0x00000080,
+            BorderTop       = 0x00000100,
+            BorderRight     = 0x00000200,
+            BorderBottom    = 0x00000400,
+            Underline       = 0x00000800,
+            UnderlineDotted = 0x00001000,
+            UnderlineDouble = 0x00002000,
+            Strikethrough   = 0x00004000,
         };
         // clang-format on
-        ATLAS_FLAG_OPS(MetaFlags, u32)
+        ATLAS_FLAG_OPS(CellFlags, u32)
 
         // This structure is shared with the GPU shader and needs to follow certain alignment rules.
         // You can generally assume that only u32 or types of that alignment are allowed.
         struct Cell
         {
             alignas(u32) u16x2 tileIndex;
-            alignas(u32) MetaFlags flags = MetaFlags::None;
+            alignas(u32) CellFlags flags = CellFlags::None;
             u32x2 color;
         };
 
-        enum class AtlasEntryKeyAttributes : u16
+        enum class AtlasEntryKeyAttributes : u8
         {
             None = 0x0,
             Intense = 0x1,
@@ -357,36 +359,48 @@ namespace Microsoft::Console::Render
             // If you ever add more flags here, make sure to fix _getTextFormat()
             // and _getTextFormatAxis() and to add a `& 3` mask for instance.
         };
-        ATLAS_FLAG_OPS(AtlasEntryKeyAttributes, u16)
+        ATLAS_FLAG_OPS(AtlasEntryKeyAttributes, u8)
 
-        struct AtlasEntryKey
+        // AtlasEntryKey will be hashed as a series of u32 values.
+        struct alignas(u32) AtlasEntryKey
         {
             AtlasEntryKeyAttributes attributes;
             u16 charCount;
             u16 coordCount;
             wchar_t chars[13];
         };
+        static_assert(sizeof(AtlasEntryKey) == 32);
 
-        struct alignas(std::hardware_destructive_interference_size) AtlasEntry
+        struct alignas(64) AtlasEntry
         {
-            // The ordering of the fields is chosen in this rather unsightly way so that this struct is optimally compact
-            // and fits on a single cache line (unless it's x86, which I didn't pay any mind to still optimize for).
+            // 8 byte
+            CellFlags flags = CellFlags::None;
             u32 hash = 0;
-            MetaFlags flags = MetaFlags::None;
+
+            // 16 byte
+            AtlasEntry* older = nullptr;
+            AtlasEntry* newer = nullptr;
+
+            // 32 byte
             union
             {
                 AtlasEntryKey* allocatedKey = nullptr;
                 AtlasEntryKey inlineKey;
             };
+
+            // 8 byte
             union
             {
                 u16x2* allocatedCoords = nullptr;
                 u16x2 inlineCoords[2];
             };
-            AtlasEntry* prev = nullptr;
-            AtlasEntry* next = nullptr;
 
             AtlasEntry() = default;
+
+            constexpr AtlasEntry(CellFlags flags) noexcept :
+                flags{ flags }
+            {
+            }
 
             AtlasEntry(AtlasEntryKeyAttributes attributes, u16 charCount, u16 coordCount, const wchar_t* chars)
             {
@@ -403,92 +417,90 @@ namespace Microsoft::Console::Render
                 {
                     key = THROW_IF_NULL_ALLOC(static_cast<AtlasEntryKey*>(malloc(totalSize)));
                     allocatedKey = key;
-                    WI_SetFlag(flags, MetaFlags::HeapdKey);
+                    WI_SetFlag(flags, CellFlags::HeapdKey);
                 }
 
                 key->attributes = attributes;
                 key->charCount = charCount;
                 key->coordCount = coordCount;
 
-                // The hash_data() function only accepts data/length aligned by u32
-                // and our chars are made up of wchar_t/u16.
-                // --> We need to memset() the last u16 word in our key->chars
-                //     because we might otherwise hash uninitialized data.
-                {
-                    const auto data = reinterpret_cast<u8*>(&key->chars[0]);
-                    const auto length = sizeof(wchar_t) * charCount;
-                    memset(&data[length - 2], 0, 2);
-                    memcpy(data, chars, length);
-                }
-
 #pragma warning(suppress : 26490) // Don't use reinterpret_cast (type.1).
-                hash = hash_data(reinterpret_cast<const u8*>(key), totalSize);
+                {
+                    // totalSize is rounded up to the next multiple of 4, but
+                    // charCount might only amount to a multiple of 2 (bytes).
+                    // memset()ing the last wchar_t ensures we don't hash uninitialized data.
+                    const auto data = reinterpret_cast<u8*>(key);
+                    memset(data + totalSize - 2, 0, 2);
+
+                    // This will potentially overwrite the memset()'d wchar_t above.
+                    std::copy_n(chars, charCount, &key->chars[0]);
+
+                    hash = hash_data(data, totalSize);
+                }
             }
 
             // Second part of the constructor
-            u16x2* finalize(MetaFlags additionalFlags, u16 coordCount)
+            u16x2* finalize(CellFlags additionalFlags, u16 coordCount)
             {
                 auto coords = &inlineCoords[0];
                 if (coordCount > std::size(inlineCoords))
                 {
                     coords = THROW_IF_NULL_ALLOC(static_cast<u16x2*>(malloc(sizeof(u16x2) * coordCount)));
                     allocatedCoords = coords;
-                    WI_SetFlag(additionalFlags, MetaFlags::HeapdCoords);
+                    WI_SetFlag(additionalFlags, CellFlags::HeapdCoords);
                 }
-                flags |= additionalFlags | MetaFlags::Initialized;
+                flags |= additionalFlags | CellFlags::Alive;
                 return coords;
             }
 
             ~AtlasEntry()
             {
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
+                if (WI_IsFlagSet(flags, CellFlags::HeapdKey))
                 {
                     free(allocatedKey);
                 }
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
+                if (WI_IsFlagSet(flags, CellFlags::HeapdCoords))
                 {
                     free(allocatedCoords);
                 }
             }
 
-            AtlasEntry(const AtlasEntry& other)
+            AtlasEntry(const AtlasEntry& other) noexcept
             {
                 *this = other;
             }
 
             AtlasEntry& operator=(const AtlasEntry& other) noexcept
             {
-                if (this == &other)
+                if (this != &other)
                 {
-                    return *this;
-                }
+                    ~AtlasEntry();
+                    memcpy(this, &other, sizeof(AtlasEntry));
 
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
-                {
-                    free(allocatedKey);
-                }
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
-                {
-                    free(allocatedCoords);
-                }
-
-                memcpy(this, &other, sizeof(AtlasEntry));
-
-                bool allocFailure = false;
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdKey))
-                {
-                    allocatedKey = static_cast<AtlasEntryKey*>(mallocClone(other.allocatedKey));
-                    allocFailure |= !allocatedKey;
-                }
-                if (WI_IsFlagSet(flags, MetaFlags::HeapdCoords))
-                {
-                    allocatedCoords = static_cast<u16x2*>(mallocClone(other.allocatedCoords));
-                    allocFailure |= !allocatedCoords;
-                }
-                if (allocFailure)
-                {
-                    memset(this, 0, sizeof(AtlasEntry));
-                    THROW_IF_NULL_ALLOC(nullptr);
+                    auto allocFailure = false;
+                    if (WI_IsFlagSet(flags, CellFlags::HeapdKey))
+                    {
+                        allocatedKey = static_cast<AtlasEntryKey*>(mallocClone(other.allocatedKey));
+                        if (!allocatedKey)
+                        {
+                            WI_ClearFlag(flags, CellFlags::HeapdKey);
+                            allocFailure = true;
+                        }
+                    }
+                    if (WI_IsFlagSet(flags, CellFlags::HeapdCoords))
+                    {
+                        allocatedCoords = static_cast<u16x2*>(mallocClone(other.allocatedCoords));
+                        if (!allocatedCoords)
+                        {
+                            WI_ClearFlag(flags, CellFlags::HeapdCoords);
+                            allocFailure = true;
+                        }
+                    }
+                    if (allocFailure)
+                    {
+                        memset(this, 0, sizeof(AtlasEntry));
+                        THROW_IF_NULL_ALLOC(nullptr);
+                    }
                 }
 
                 return *this;
@@ -503,6 +515,7 @@ namespace Microsoft::Console::Render
             {
                 if (this != &other)
                 {
+                    ~AtlasEntry();
                     memcpy(this, &other, sizeof(AtlasEntry));
                     memset(&other, 0, sizeof(AtlasEntry));
                 }
@@ -520,12 +533,12 @@ namespace Microsoft::Console::Render
 
             const AtlasEntryKey& key() const noexcept
             {
-                return WI_IsFlagClear(flags, MetaFlags::HeapdKey) ? inlineKey : *allocatedKey;
+                return WI_IsFlagClear(flags, CellFlags::HeapdKey) ? inlineKey : *allocatedKey;
             }
 
             const u16x2* coords() const noexcept
             {
-                return WI_IsFlagClear(flags, MetaFlags::HeapdCoords) ? &inlineCoords[0] : allocatedCoords;
+                return WI_IsFlagClear(flags, CellFlags::HeapdCoords) ? &inlineCoords[0] : allocatedCoords;
             }
 
         private:
@@ -573,7 +586,7 @@ namespace Microsoft::Console::Render
                 }
 
                 // PCG (permuted congruential generator) XSL-RR finalizer.
-                // In testing it seemed sufficient for our purpose of a hash-map key.
+                // In testing it seemed sufficient for the purpose of a hash-map key generator.
                 //
                 // Copyright 2014-2017 Melissa O'Neill <oneill@pcg-random.org>, and the PCG Project contributors.
                 // See oss/pcg/LICENSE-MIT.txt, oss/pcg/LICENSE-APACHE.txt or https://www.pcg-random.org/.
@@ -586,14 +599,148 @@ namespace Microsoft::Console::Render
 
         struct BoringHashset
         {
-            AtlasEntry& emplace(AtlasEntry&& entry, bool& inserted)
-            {
-                if (size > entries.size() / 2)
-                {
-                    std::vector<AtlasEntry> newEntries{ entries.size() * 2 };
-                    const auto newMask = (mask << 1) | 1;
+            BoringHashset() = default;
 
-                    for (auto& it : entries)
+            AtlasEntry* find(AtlasEntry&& entry) noexcept
+            {
+                for (auto i = entry.hash;; ++i)
+                {
+                    const auto it = &_entries[i & _mask];
+                    if (it->flags == CellFlags::None)
+                    {
+                        return nullptr;
+                    }
+                    if (*it == entry)
+                    {
+                        _bumpEntry(it);
+                        return it;
+                    }
+                }
+            }
+
+            void popTailTiles(std::vector<u16x2>& out) noexcept
+            {
+                Expects(_oldest);
+
+                for (const auto& coord : std::span{ _oldest->coords(), _oldest->key().coordCount })
+                {
+                    out.push_back(coord);
+                }
+
+                // Pop from LRU queue
+                const auto oldest = _oldest;
+                const auto secondOldest = oldest->newer;
+                if (secondOldest)
+                {
+                    secondOldest->older = nullptr;
+                }
+                _oldest = secondOldest;
+
+                // Most linear probing implementations use tombstones for deletions.
+                // I was concerned that this would cause performance problems in
+                // combination with the potentially more frequent LRU evictions.
+                //
+                // This approach moves the last entry belonging to a "cluster" forward into the deleted slot.
+                // If "0" marks empty entries, 1/2 the hash (mod N) of occupied entries, a-h their contents,
+                // and "^" entries to be deleted then we get the following results:
+                // |   | b | c | d | e | f |   |   |
+                // | 0 | 1 | 1 | 1 | 2 | 2 | 0 | 0 |
+                //           ^
+                // |   | b | d |   | e | f |   |   |
+                // | 0 | 1 | 1 | 0 | 2 | 2 | 0 | 0 |
+                //                   ^
+                // |   | b | d |   | f |   |   |   |
+                // | 0 | 1 | 1 | 0 | 2 | 0 | 0 | 0 |
+                //                   ^
+                // |   | b | d |   |   |   |   |   |
+                // | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+                {
+                    AtlasEntry* neighbor = nullptr;
+
+                    auto h = oldest->hash & _mask;
+                    for (u32 i = oldest - _entries.begin() + 1;; ++i)
+                    {
+                        auto it = &_entries[i & _mask];
+                        if (it->flags == CellFlags::None || (it->hash & _mask) != h)
+                        {
+                            break;
+                        }
+                        neighbor = it;
+                    }
+
+                    if (neighbor)
+                    {
+                        *oldest = std::move(*neighbor);
+                    }
+                    else
+                    {
+                        *oldest = AtlasEntry{};
+                    }
+                }
+
+                // The Wikipedia article for open addressing (https://en.wikipedia.org/wiki/Open_addressing) features pseudo code
+                // for removal the way Donald Knuth described it in The Art of Computer Programming (even if it doesn't give credit).
+                // But the pseudo code seemed extremely obtuse/complex. Looking up Knuth's code, it was much simpler.
+                //
+                // I suppose the author on Wikipedia made a mistake. This is Knuth's "Algorithm R":
+                // > R1. [Empty a cell.] Mark TABLE[i] empty, and set j <-- i.
+                // > R2. [Decrease i.] Set i <-- i - 1, and if this makes i negative set i <-- i + M.
+                // > R3. [Inspect TABLE[i].] If TABLE[i] is empty, the algorithm terminates.
+                //       Otherwise set r <-- h(KEY [i]), the original hash address of the key now stored at position i.
+                //       If i <= r < j or if r < j < i or j < i <= r (in other words, if r lies cyclically between i and j), go back to R2.
+                // > R4. [Move a record.] Set TABLE[j] <-- TABLE[i], and return to step R2.
+                //
+                // We have to flip i/j and +/- because we use ascending addresses.
+                {
+                    u32 i = oldest - _entries.begin();
+                    u32 j = i;
+                    for (;;)
+                    {
+                    r2:
+                        j = (j + 1) & _mask;
+                        if (_entries[j].flags == CellFlags::None)
+                        {
+                            break;
+                        }
+
+                        auto k = _entries[j].hash & _mask;
+                        // determine if k lies cyclically in (i,j]
+                        // |    i.k.j |
+                        // |....j i.k.| or  |.k..j i...|
+                        if ((j >= i) ? !((k <= i) || (k > j)) : ((k <= i) && (k > j)))
+                        {
+                            _entries[i] = std::move(_entries[j]);
+                            i = j;
+                        }
+                    }
+
+                    _entries[i] = AtlasEntry{};
+                }
+
+                // This is a linear probing hash table which uses tombstones for deletions.
+                // We can avoid creating a tombstone as long as that wouldn't split a cluster in two.
+                // This check avoids the hash table from being one long list of tombstones at some point.
+                {
+                    auto neighbor = oldest + 1;
+                    if (neighbor == _entries.end())
+                    {
+                        neighbor = _entries.begin();
+                    }
+                    const auto neighborAlive = WI_IsFlagSet(neighbor->flags, CellFlags::Alive);
+                    WI_SetFlagIf(oldest->flags, CellFlags::Tombstone, neighborAlive);
+                }
+
+                _size--;
+            }
+
+            void insert(AtlasEntry&& entry)
+            {
+                if (_size >= _entries.size() / 2)
+                {
+                    Buffer<AtlasEntry> newEntries{ _entries.size() * 2 };
+                    const auto newMask = newEntries.size() - 1;
+
+                    for (auto& it : _entries)
                     {
                         if (it.key().charCount != 0)
                         {
@@ -609,47 +756,54 @@ namespace Microsoft::Console::Render
                         }
                     }
 
-                    this->entries = std::move(newEntries);
-                    this->mask = newMask;
+                    _entries = std::move(newEntries);
+                    _mask = newMask;
                 }
-
-                AtlasEntry* it;
 
                 for (auto i = entry.hash;; ++i)
                 {
-                    it = &entries[i & mask];
-                    if (*it == entry)
+                    const auto it = &_entries[i & _mask];
+                    if (WI_IsFlagClear(it->flags, CellFlags::Alive))
                     {
-                        inserted = false;
-                        break;
-                    }
-                    if (it->flags == MetaFlags::None)
-                    {
-                        *it = std::move(entry);
-                        size++;
-                        inserted = true;
+                        *it = entry;
+                        _bumpEntry(it);
                         break;
                     }
                 }
-
-                if (!tail)
-                {
-                    tail = it;
-                }
-                if (head)
-                {
-                    head->next = it;
-                }
-                head = it;
-                return *it;
             }
 
         private:
-            AtlasEntry* tail = nullptr;
-            AtlasEntry* head = nullptr;
-            std::vector<AtlasEntry> entries{ 64 };
-            size_t size = 0;
-            u32 mask = 63;
+            void _bumpEntry(AtlasEntry* it) noexcept
+            {
+                // Splice the entry out of the LRU queue
+                if (it->older)
+                {
+                    it->older->newer = it->newer;
+                }
+                if (it->newer)
+                {
+                    it->newer->older = it->older;
+                }
+                // Add the entry to the head of the LRU queue
+                if (!_oldest)
+                {
+                    _oldest = it;
+                }
+                if (_newest)
+                {
+                    it->older = _newest;
+                    _newest->newer = it;
+                }
+                _newest = it;
+            }
+
+            static constexpr size_t minSize = 256;
+
+            AtlasEntry* _oldest = nullptr;
+            AtlasEntry* _newest = nullptr;
+            Buffer<AtlasEntry> _entries{ minSize };
+            size_t _size = 0;
+            u32 _mask = minSize - 1;
         };
 
         struct CachedCursorOptions
@@ -664,7 +818,7 @@ namespace Microsoft::Console::Render
         struct BufferLineMetadata
         {
             u32x2 colors;
-            MetaFlags flags = MetaFlags::None;
+            CellFlags flags = CellFlags::None;
         };
 
         // NOTE: D3D constant buffers sizes must be a multiple of 16 bytes.
@@ -733,8 +887,7 @@ namespace Microsoft::Console::Render
         IDWriteTextFormat* _getTextFormat(AtlasEntryKeyAttributes attributes) const noexcept;
         const Buffer<DWRITE_FONT_AXIS_VALUE>& _getTextFormatAxis(AtlasEntryKeyAttributes attributes) const noexcept;
         Cell* _getCell(u16 x, u16 y) noexcept;
-        void _setCellFlags(u16r coords, MetaFlags mask, MetaFlags bits) noexcept;
-        u16x2 _allocateAtlasTile() noexcept;
+        void _setCellFlags(u16r coords, CellFlags mask, CellFlags bits) noexcept;
         void _flushBufferLine();
         void _emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, size_t bufferPos2);
 
@@ -811,11 +964,9 @@ namespace Microsoft::Console::Render
             u16 strikethroughPos = 0;
             u16 lineThickness = 0;
             u16 dpi = USER_DEFAULT_SCREEN_DPI; // invalidated by ApiInvalidations::Font, caches _api.dpi
-            u16 maxEncounteredCellCount = 0;
             u16 scratchpadCellWidth = 0;
             u16x2 atlasSizeInPixelLimit; // invalidated by ApiInvalidations::Font
             u16x2 atlasSizeInPixel; // invalidated by ApiInvalidations::Font
-            u16x2 atlasPosition;
             BoringHashset glyphs;
             std::vector<AtlasEntry> glyphQueue;
 
@@ -863,7 +1014,7 @@ namespace Microsoft::Console::Render
             u32x2 currentColor;
             AtlasEntryKeyAttributes attributes = AtlasEntryKeyAttributes::None;
             u16x2 lastPaintBufferLineCoord;
-            MetaFlags flags = MetaFlags::None;
+            CellFlags flags = CellFlags::None;
             // SetSelectionBackground()
             u32 selectionColor = 0x7fffffff;
             // UpdateHyperlinkHoveredId()

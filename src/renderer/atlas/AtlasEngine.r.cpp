@@ -312,7 +312,7 @@ void AtlasEngine::_drawGlyph(const AtlasEntry& entry) const
     const auto charsLength = key.charCount;
     const auto cells = static_cast<u32>(key.coordCount);
     const auto textFormat = _getTextFormat(key.attributes);
-    const auto coloredGlyph = WI_IsFlagSet(entry.flags, MetaFlags::ColoredGlyph);
+    const auto coloredGlyph = WI_IsFlagSet(entry.flags, CellFlags::ColoredGlyph);
 
     // See D2DFactory::DrawText
     wil::com_ptr<IDWriteTextLayout> textLayout;

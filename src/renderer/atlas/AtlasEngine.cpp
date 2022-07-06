@@ -25,20 +25,6 @@
 
 using namespace Microsoft::Console::Render;
 
-#pragma warning(push)
-#pragma warning(disable : 26447) // The function is declared 'noexcept' but calls function 'operator()()' which may throw exceptions (f.6).
-__declspec(noinline) static void showOOMWarning() noexcept
-{
-    [[maybe_unused]] static const auto once = []() {
-        std::thread t{ []() noexcept {
-            MessageBoxW(nullptr, L"This application is using a highly experimental text rendering engine and has run out of memory. Text rendering will start to behave irrationally and you should restart this process.", L"Out Of Memory", MB_ICONERROR | MB_OK);
-        } };
-        t.detach();
-        return false;
-    }();
-}
-#pragma warning(pop)
-
 struct TextAnalyzer final : IDWriteTextAnalysisSource, IDWriteTextAnalysisSink
 {
     constexpr TextAnalyzer(const std::vector<wchar_t>& text, std::vector<AtlasEngine::TextAnalyzerResult>& results) noexcept :
@@ -496,11 +482,11 @@ CATCH_RETURN()
 [[nodiscard]] HRESULT AtlasEngine::PaintBufferGridLines(const GridLineSet lines, const COLORREF color, const size_t cchLine, const til::point coordTarget) noexcept
 try
 {
-    if (!_api.bufferLineWasHyperlinked && lines.test(GridLines::Underline) && WI_IsFlagClear(_api.flags, MetaFlags::Underline))
+    if (!_api.bufferLineWasHyperlinked && lines.test(GridLines::Underline) && WI_IsFlagClear(_api.flags, CellFlags::Underline))
     {
         _api.bufferLineWasHyperlinked = true;
 
-        WI_UpdateFlagsInMask(_api.flags, MetaFlags::Underline | MetaFlags::UnderlineDotted | MetaFlags::UnderlineDouble, MetaFlags::Underline);
+        WI_UpdateFlagsInMask(_api.flags, CellFlags::Underline | CellFlags::UnderlineDotted | CellFlags::UnderlineDouble, CellFlags::Underline);
 
         const BufferLineMetadata metadata{ _api.currentColor, _api.flags };
         const size_t x = _api.lastPaintBufferLineCoord.x;
@@ -524,7 +510,7 @@ try
         rect.narrow_right<u16>(),
         rect.narrow_bottom<u16>(),
     };
-    _setCellFlags(u16rect, MetaFlags::Selected, MetaFlags::Selected);
+    _setCellFlags(u16rect, CellFlags::Selected, CellFlags::Selected);
     return S_OK;
 }
 CATCH_RETURN()
@@ -553,7 +539,7 @@ try
     // Clear the previous cursor
     if (_api.invalidatedCursorArea.non_empty())
     {
-        _setCellFlags(_api.invalidatedCursorArea, MetaFlags::Cursor, MetaFlags::None);
+        _setCellFlags(_api.invalidatedCursorArea, CellFlags::Cursor, CellFlags::None);
     }
 
     if (options.isOn)
@@ -565,7 +551,7 @@ try
         const auto y = gsl::narrow_cast<uint16_t>(clamp<int>(point.Y, 0, _r.cellCount.y - 1));
         const auto right = gsl::narrow_cast<uint16_t>(x + 1 + (options.fIsDoubleWidth & (options.cursorType != CursorType::VerticalBar)));
         const auto bottom = gsl::narrow_cast<uint16_t>(y + 1);
-        _setCellFlags({ x, y, right, bottom }, MetaFlags::Cursor, MetaFlags::Cursor);
+        _setCellFlags({ x, y, right, bottom }, CellFlags::Cursor, CellFlags::Cursor);
     }
 
     return S_OK;
@@ -583,20 +569,20 @@ try
     {
         const auto hyperlinkId = textAttributes.GetHyperlinkId();
 
-        auto flags = MetaFlags::None;
-        WI_SetFlagIf(flags, MetaFlags::BorderLeft, textAttributes.IsLeftVerticalDisplayed());
-        WI_SetFlagIf(flags, MetaFlags::BorderTop, textAttributes.IsTopHorizontalDisplayed());
-        WI_SetFlagIf(flags, MetaFlags::BorderRight, textAttributes.IsRightVerticalDisplayed());
-        WI_SetFlagIf(flags, MetaFlags::BorderBottom, textAttributes.IsBottomHorizontalDisplayed());
-        WI_SetFlagIf(flags, MetaFlags::Underline, textAttributes.IsUnderlined());
-        WI_SetFlagIf(flags, MetaFlags::UnderlineDotted, hyperlinkId != 0);
-        WI_SetFlagIf(flags, MetaFlags::UnderlineDouble, textAttributes.IsDoublyUnderlined());
-        WI_SetFlagIf(flags, MetaFlags::Strikethrough, textAttributes.IsCrossedOut());
+        auto flags = CellFlags::None;
+        WI_SetFlagIf(flags, CellFlags::BorderLeft, textAttributes.IsLeftVerticalDisplayed());
+        WI_SetFlagIf(flags, CellFlags::BorderTop, textAttributes.IsTopHorizontalDisplayed());
+        WI_SetFlagIf(flags, CellFlags::BorderRight, textAttributes.IsRightVerticalDisplayed());
+        WI_SetFlagIf(flags, CellFlags::BorderBottom, textAttributes.IsBottomHorizontalDisplayed());
+        WI_SetFlagIf(flags, CellFlags::Underline, textAttributes.IsUnderlined());
+        WI_SetFlagIf(flags, CellFlags::UnderlineDotted, hyperlinkId != 0);
+        WI_SetFlagIf(flags, CellFlags::UnderlineDouble, textAttributes.IsDoublyUnderlined());
+        WI_SetFlagIf(flags, CellFlags::Strikethrough, textAttributes.IsCrossedOut());
 
         if (_api.hyperlinkHoveredId && _api.hyperlinkHoveredId == hyperlinkId)
         {
-            WI_SetFlag(flags, MetaFlags::Underline);
-            WI_ClearAllFlags(flags, MetaFlags::UnderlineDotted | MetaFlags::UnderlineDouble);
+            WI_SetFlag(flags, CellFlags::Underline);
+            WI_ClearAllFlags(flags, CellFlags::UnderlineDotted | CellFlags::UnderlineDouble);
         }
 
         const u32x2 newColors{ gsl::narrow_cast<u32>(fg), gsl::narrow_cast<u32>(bg) };
@@ -1040,7 +1026,7 @@ void AtlasEngine::_recreateFontDependentResources()
             const auto fontStyle = italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
             auto& textFormat = _r.textFormats[attributes];
 
-            THROW_IF_FAILED(_sr.dwriteFactory->CreateTextFormat(_api.fontMetrics.fontName.get(), nullptr, fontWeight, fontStyle, DWRITE_FONT_STRETCH_NORMAL, _api.fontMetrics.fontSizeInDIP, L"", textFormat.put()));
+            THROW_IF_FAILED(_sr.dwriteFactory->CreateTextFormat(_api.fontMetrics.fontName.get(), _api.fontMetrics.fontCollection.get(), fontWeight, fontStyle, DWRITE_FONT_STRETCH_NORMAL, _api.fontMetrics.fontSizeInDIP, L"", textFormat.put()));
             textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
             textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
 
@@ -1101,7 +1087,7 @@ AtlasEngine::Cell* AtlasEngine::_getCell(u16 x, u16 y) noexcept
     return _r.cells.data() + static_cast<size_t>(_r.cellCount.x) * y + x;
 }
 
-void AtlasEngine::_setCellFlags(u16r coords, MetaFlags mask, MetaFlags bits) noexcept
+void AtlasEngine::_setCellFlags(u16r coords, CellFlags mask, CellFlags bits) noexcept
 {
     assert(coords.left <= coords.right);
     assert(coords.top <= coords.bottom);
@@ -1124,26 +1110,6 @@ void AtlasEngine::_setCellFlags(u16r coords, MetaFlags mask, MetaFlags bits) noe
             data->flags = (current & filter) | bits;
         }
     }
-}
-
-AtlasEngine::u16x2 AtlasEngine::_allocateAtlasTile() noexcept
-{
-    const auto ret = _r.atlasPosition;
-
-    _r.atlasPosition.x += _r.cellSize.x;
-    if (_r.atlasPosition.x >= _r.atlasSizeInPixelLimit.x)
-    {
-        _r.atlasPosition.x = 0;
-        _r.atlasPosition.y += _r.cellSize.y;
-        if (_r.atlasPosition.y >= _r.atlasSizeInPixelLimit.y)
-        {
-            _r.atlasPosition.x = _r.cellSize.x;
-            _r.atlasPosition.y = 0;
-            showOOMWarning();
-        }
-    }
-
-    return ret;
 }
 
 void AtlasEngine::_flushBufferLine()
@@ -1451,7 +1417,7 @@ void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
     const auto x2 = _api.bufferLineColumn[bufferPos2];
 
     Expects(x1 < x2 && x2 <= _api.cellCount.x);
-
+    
     const u16 cellCount = x2 - x1;
 
     bool inserted;
@@ -1478,11 +1444,11 @@ void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
         //
         // So this is a job for future me/someone.
         // Bonus points for doing it without impacting performance.
-        auto flags = MetaFlags::None;
+        auto flags = CellFlags::None;
         if (fontFace)
         {
             const auto fontFace2 = wil::try_com_query<IDWriteFontFace2>(fontFace);
-            WI_SetFlagIf(flags, MetaFlags::ColoredGlyph, fontFace2 && fontFace2->IsColorFont());
+            WI_SetFlagIf(flags, CellFlags::ColoredGlyph, fontFace2 && fontFace2->IsColorFont());
         }
 
         const auto coords = it.finalize(flags, cellCount);
@@ -1492,19 +1458,18 @@ void AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
         }
 
         _r.glyphQueue.push_back(it);
-        _r.maxEncounteredCellCount = std::max(_r.maxEncounteredCellCount, cellCount);
     }
 
     const auto coords = it.coords();
     const auto data = _getCell(x1, _api.lastPaintBufferLineCoord.y);
 
-    for (size_t i = 0; i < cellCount; ++i)
+    for (u32 i = 0; i < cellCount; ++i)
     {
         data[i].tileIndex = coords[i];
         // We should apply the column color and flags from each column (instead
         // of copying them from the x1) so that ligatures can appear in multiple
         // colors with different line styles.
-        data[i].flags = it.flags | _api.bufferLineMetadata[x1 + i].flags;
-        data[i].color = _api.bufferLineMetadata[x1 + i].colors;
+        data[i].flags = it.flags | _api.bufferLineMetadata[static_cast<size_t>(x1) + i].flags;
+        data[i].color = _api.bufferLineMetadata[static_cast<size_t>(x1) + i].colors;
     }
 }
