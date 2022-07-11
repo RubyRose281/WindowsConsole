@@ -245,19 +245,6 @@ bool DxEngine::_HasTerminalEffects() const noexcept
 }
 
 // Routine Description:
-// - Toggles terminal effects off and on. If no terminal effect is configured has no effect
-// Arguments:
-// Return Value:
-// - Void
-void DxEngine::ToggleShaderEffects() noexcept
-{
-    _terminalEffectsEnabled = !_terminalEffectsEnabled;
-    _recreateDeviceRequested = true;
-#pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function 'Log_IfFailed()' which may throw exceptions (f.6).
-    LOG_IF_FAILED(InvalidateAll());
-}
-
-// Routine Description:
 // - Loads pixel shader source depending on _retroTerminalEffect and _pixelShaderPath
 // Arguments:
 // Return Value:
@@ -446,9 +433,9 @@ HRESULT DxEngine::_SetupTerminalEffects()
     // Sampler state is needed to use texture as input to shader.
     D3D11_SAMPLER_DESC samplerDesc{};
     samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+    samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+    samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
     samplerDesc.MipLODBias = 0.0f;
     samplerDesc.MaxAnisotropy = 1;
     samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
@@ -744,7 +731,7 @@ try
     {
         try
         {
-            _pfn();
+            _pfn(_swapChainHandle.get());
         }
         CATCH_LOG(); // A failure in the notification function isn't a failure to prepare, so just log it and go on.
     }
@@ -994,7 +981,7 @@ try
 }
 CATCH_RETURN();
 
-void DxEngine::SetCallback(std::function<void()> pfn) noexcept
+void DxEngine::SetCallback(std::function<void(const HANDLE)> pfn) noexcept
 {
     _pfn = std::move(pfn);
 }
@@ -1022,6 +1009,11 @@ try
     }
 }
 CATCH_LOG()
+
+std::wstring_view DxEngine::GetPixelShaderPath() noexcept
+{
+    return _pixelShaderPath;
+}
 
 void DxEngine::SetPixelShaderPath(std::wstring_view value) noexcept
 try
@@ -1059,17 +1051,6 @@ try
     }
 }
 CATCH_LOG()
-
-HANDLE DxEngine::GetSwapChainHandle() noexcept
-{
-    if (!_swapChainHandle)
-    {
-#pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function 'Log_IfFailed()' which may throw exceptions (f.6).
-        LOG_IF_FAILED(_CreateDeviceResources(true));
-    }
-
-    return _swapChainHandle.get();
-}
 
 void DxEngine::_InvalidateRectangle(const til::rect& rc)
 {
