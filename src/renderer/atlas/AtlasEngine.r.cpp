@@ -243,16 +243,32 @@ void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
     const auto cells = static_cast<u32>(key->attributes.cellCount);
     const auto textFormat = _getTextFormat(key->attributes.bold, key->attributes.italic);
     const auto coloredGlyph = WI_IsFlagSet(value->flags, CellFlags::ColoredGlyph);
+    
+    const float maxWidth = cells * _r.cellSizeDIP.x;
+    const float maxHeight = _r.cellSizeDIP.y;
 
     // See D2DFactory::DrawText
     wil::com_ptr<IDWriteTextLayout> textLayout;
-    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&key->chars[0], charsLength, textFormat, cells * _r.cellSizeDIP.x, _r.cellSizeDIP.y, textLayout.addressof()));
+    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&key->chars[0], charsLength, textFormat, maxWidth, maxHeight, textLayout.addressof()));
     if (_r.typography)
     {
         textLayout->SetTypography(_r.typography.get(), { 0, charsLength });
     }
 
-    auto options = D2D1_DRAW_TEXT_OPTIONS_CLIP;
+    DWRITE_OVERHANG_METRICS metrics;
+    THROW_IF_FAILED(textLayout->GetOverhangMetrics(&metrics));
+   
+    metrics.left = std::max(0.0f, metrics.left);
+    metrics.top = std::max(0.0f, metrics.top);
+    metrics.right = std::max(0.0f, metrics.right);
+    metrics.bottom = std::max(0.0f, metrics.bottom);
+
+    const auto scaleX = maxWidth / (maxWidth + metrics.left + metrics.right);
+    const auto scaleY = maxHeight / (maxHeight + metrics.top + metrics.bottom);
+    const auto scale = std::min(scaleX, scaleY);
+    const auto transform = scale < 0.95;
+
+    auto options = D2D1_DRAW_TEXT_OPTIONS_NONE;
     // D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT enables a bunch of internal machinery
     // which doesn't have to run if we know we can't use it anyways in the shader.
     WI_SetFlagIf(options, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, coloredGlyph);
@@ -282,7 +298,15 @@ void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
 
         _r.d2dRenderTarget->PushAxisAlignedClip(&rect, D2D1_ANTIALIAS_MODE_ALIASED);
         _r.d2dRenderTarget->Clear();
+        if (transform)
+        {
+            _r.d2dRenderTarget->SetTransform(D2D1::Matrix3x2F::Scale({scale, scale}, {origin.x + maxWidth / 2.0f, origin.y + maxHeight * 3.15625f / 14.8020821f}));
+        }
         _r.d2dRenderTarget->DrawTextLayout(origin, textLayout.get(), _r.brush.get(), options);
+        if (transform)
+        {
+            _r.d2dRenderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+        }
         _r.d2dRenderTarget->PopAxisAlignedClip();
     }
 }
