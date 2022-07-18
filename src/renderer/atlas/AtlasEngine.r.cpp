@@ -21,7 +21,7 @@
 #pragma warning(disable : 26481) // Don't use pointer arithmetic. Use span instead (bounds.1).
 #pragma warning(disable : 26482) // Only index into arrays using constant expressions (bounds.2).
 
-using namespace Microsoft::Console::Render;
+using namespace Microsoft::Console::Render::Atlas;
 
 #pragma region IRenderEngine
 
@@ -225,28 +225,26 @@ void AtlasEngine::_processGlyphQueue()
     }
 
     _r.d2dRenderTarget->BeginDraw();
-    for (const auto& pair : _r.glyphQueue)
+    for (const auto& entry : _r.glyphQueue)
     {
-        _drawGlyph(pair);
+        _drawGlyph(*entry);
     }
     THROW_IF_FAILED(_r.d2dRenderTarget->EndDraw());
 
     _r.glyphQueue.clear();
 }
 
-void AtlasEngine::_drawGlyph(const AtlasQueueItem& item) const
+void AtlasEngine::_drawGlyph(const AtlasEntry& entry) const
 {
-    const auto key = item.key->data();
-    const auto value = item.value->data();
-    const auto coords = &value->coords[0];
-    const auto charsLength = key->charCount;
-    const auto cells = static_cast<u32>(key->attributes.cellCount);
-    const auto textFormat = _getTextFormat(key->attributes.bold, key->attributes.italic);
-    const auto coloredGlyph = WI_IsFlagSet(value->flags, CellFlags::ColoredGlyph);
+    const auto coords = &entry.value->coords[0];
+    const auto charsLength = entry.key.charCount;
+    const auto cells = static_cast<u32>(entry.key.coordCount);
+    const auto textFormat = _getTextFormat(entry.key.attributes);
+    const auto coloredGlyph = WI_IsFlagSet(entry.value->flags, CellFlags::ColoredGlyph);
 
     // See D2DFactory::DrawText
     wil::com_ptr<IDWriteTextLayout> textLayout;
-    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&key->chars[0], charsLength, textFormat, cells * _r.cellSizeDIP.x, _r.cellSizeDIP.y, textLayout.addressof()));
+    THROW_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(&entry.key.chars[0], charsLength, textFormat, cells * _r.cellSizeDIP.x, _r.cellSizeDIP.y, textLayout.addressof()));
     if (_r.typography)
     {
         textLayout->SetTypography(_r.typography.get(), { 0, charsLength });

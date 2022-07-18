@@ -19,7 +19,7 @@
 #pragma warning(disable : 26481) // Don't use pointer arithmetic. Use span instead (bounds.1).
 #pragma warning(disable : 26482) // Only index into arrays using constant expressions (bounds.2).
 
-using namespace Microsoft::Console::Render;
+using namespace Microsoft::Console::Render::Atlas;
 
 // Like gsl::narrow but returns a HRESULT.
 #pragma warning(push)
@@ -33,7 +33,7 @@ constexpr HRESULT api_narrow(U val, T& out) noexcept
 #pragma warning(pop)
 
 template<typename T, typename U>
-constexpr HRESULT vec2_narrow(U x, U y, AtlasEngine::vec2<T>& out) noexcept
+constexpr HRESULT vec2_narrow(U x, U y, vec2<T>& out) noexcept
 {
     return api_narrow(x, out.x) | api_narrow(y, out.y);
 }
@@ -267,7 +267,7 @@ CATCH_RETURN()
     RETURN_HR_IF_NULL(E_INVALIDARG, pResult);
 
     wil::com_ptr<IDWriteTextLayout> textLayout;
-    RETURN_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(glyph.data(), gsl::narrow_cast<uint32_t>(glyph.size()), _getTextFormat(false, false), FLT_MAX, FLT_MAX, textLayout.addressof()));
+    RETURN_IF_FAILED(_sr.dwriteFactory->CreateTextLayout(glyph.data(), gsl::narrow_cast<uint32_t>(glyph.size()), _getTextFormat(AtlasEntryKeyAttributes::None), FLT_MAX, FLT_MAX, textLayout.addressof()));
 
     DWRITE_TEXT_METRICS metrics;
     RETURN_IF_FAILED(textLayout->GetMetrics(&metrics));

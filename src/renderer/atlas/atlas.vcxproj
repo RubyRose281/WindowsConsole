@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClCompile Include="AtlasEngine.api.cpp" />
     <ClCompile Include="AtlasEngine.r.cpp" />
+    <ClCompile Include="AtlasEntry.cpp" />
     <ClCompile Include="dwrite.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -20,9 +21,12 @@
     <ClCompile Include="AtlasEngine.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AtlasEntry.h" />
+    <ClInclude Include="Cell.h" />
     <ClInclude Include="dwrite.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="AtlasEngine.h" />
+    <ClInclude Include="util.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="dwrite.hlsl">

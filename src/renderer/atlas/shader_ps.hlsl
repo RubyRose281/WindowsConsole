@@ -5,25 +5,25 @@
 
 #define INVALID_COLOR 0xffffffff
 
-// These flags are shared with AtlasEngine::CellFlags.
+// These flags are shared with CellFlags.
 //
 // clang-format off
+
 #define CellFlags_None            0x00000000
-#define CellFlags_Inlined         0x00000001
 
-#define CellFlags_ColoredGlyph    0x00000002
+#define CellFlags_ColoredGlyph    0x00000001
 
-#define CellFlags_Cursor          0x00000008
-#define CellFlags_Selected        0x00000010
+#define CellFlags_Cursor          0x00000002
+#define CellFlags_Selected        0x00000004
 
-#define CellFlags_BorderLeft      0x00000020
-#define CellFlags_BorderTop       0x00000040
-#define CellFlags_BorderRight     0x00000080
-#define CellFlags_BorderBottom    0x00000100
-#define CellFlags_Underline       0x00000200
-#define CellFlags_UnderlineDotted 0x00000400
-#define CellFlags_UnderlineDouble 0x00000800
-#define CellFlags_Strikethrough   0x00001000
+#define CellFlags_BorderLeft      0x00000008
+#define CellFlags_BorderTop       0x00000010
+#define CellFlags_BorderRight     0x00000020
+#define CellFlags_BorderBottom    0x00000040
+#define CellFlags_Underline       0x00000080
+#define CellFlags_UnderlineDotted 0x00000100
+#define CellFlags_UnderlineDouble 0x00000200
+#define CellFlags_Strikethrough   0x00000400
 // clang-format on
 
 // According to Nvidia's "Understanding Structured Buffer Performance" guide
