@@ -135,6 +135,10 @@
     <value>Duplicate</value>
     <comment>Button label that duplicates the selected profile and navigates to the duplicate's page.</comment>
   </data>
+  <data name="ColorScheme_Rename.Header" xml:space="preserve">
+    <value>Rename color scheme</value>
+    <comment>This is the header for a control that allows the user to rename the currently selected color scheme.</comment>
+  </data>
   <data name="ColorScheme_Background.Text" xml:space="preserve">
     <value>Background</value>
     <comment>This is the header for a control that lets the user select the background color for text displayed on the screen.</comment>
@@ -1165,8 +1169,12 @@
     <value>Add new</value>
     <comment>Button label that creates a new color scheme.</comment>
   </data>
+  <data name="ColorScheme_EditButton.Text" xml:space="preserve">
+    <value>Edit</value>
+    <comment>Button label that edits the currently selected color scheme.</comment>
+  </data>
   <data name="ColorScheme_DeleteButton.Text" xml:space="preserve">
-    <value>Delete color scheme</value>
+    <value>Delete</value>
     <comment>Button label that deletes the selected color scheme.</comment>
   </data>
   <data name="ColorScheme_Name.Header" xml:space="preserve">
@@ -1225,7 +1233,7 @@
     <value>Rename</value>
     <comment>Text label for a button that can be used to begin the renaming process.</comment>
   </data>
-  <data name="ColorScheme_DeleteButtonDisclaimerInBox.Text" xml:space="preserve">
+  <data name="ColorScheme_DeleteButtonDisclaimerInBox" xml:space="preserve">
     <value>This color scheme cannot be deleted or renamed because it is included by default.</value>
     <comment>Disclaimer presented next to the delete button when it is disabled.</comment>
   </data>
@@ -1337,13 +1345,9 @@
     <value>Reset to inherited value.</value>
     <comment>This button will remove a user's customization from a given setting, restoring it to the value that the profile inherited. This is a text label on a button.</comment>
   </data>
-  <data name="ColorScheme_TerminalColorsHeader.Text" xml:space="preserve">
-    <value>Terminal colors</value>
-    <comment>A header for a grouping of colors in the color scheme. These colors are used for basic parts of the terminal.</comment>
-  </data>
-  <data name="ColorScheme_SystemColorsHeader.Text" xml:space="preserve">
-    <value>System colors</value>
-    <comment>A header for a grouping of colors in the color scheme. These colors are used for functional parts of the terminal.</comment>
+  <data name="ColorScheme_ColorsHeader.Header" xml:space="preserve">
+    <value>Colors</value>
+    <comment>A header for the grouping of colors in the color scheme.</comment>
   </data>
   <data name="SettingContainer_OverrideMessageFragmentExtension" xml:space="preserve">
     <value>Reset to value from: {}</value>
