@@ -329,7 +329,7 @@ namespace winrt::TerminalApp::implementation
     // - true if the ApplicationState should be used.
     bool TerminalPage::ShouldUsePersistedLayout(CascadiaSettings& settings) const
     {
-        return settings.GlobalSettings().FirstWindowPreference() == FirstWindowPreference::PersistedWindowLayout;
+        return settings.GlobalSettings().FirstWindowPreference() != FirstWindowPreference::DefaultProfile;
     }
 
     // Method Description:
@@ -1636,12 +1636,13 @@ namespace winrt::TerminalApp::implementation
             return nullptr;
         }
 
+        const auto persistDefTerm = _settings.GlobalSettings().FirstWindowPreference() == FirstWindowPreference::PersistedWindowLayoutIncludingHandoff;
         std::vector<ActionAndArgs> actions;
 
         for (auto tab : _tabs)
         {
             auto t = winrt::get_self<implementation::TabBase>(tab);
-            auto tabActions = t->BuildStartupActions();
+            auto tabActions = t->BuildStartupActions(persistDefTerm);
             actions.insert(actions.end(), std::make_move_iterator(tabActions.begin()), std::make_move_iterator(tabActions.end()));
         }
 

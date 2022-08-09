@@ -251,6 +251,7 @@ JSON_ENUM_MAPPER(::winrt::Microsoft::Terminal::Settings::Model::FirstWindowPrefe
     JSON_MAPPINGS(2) = {
         pair_type{ "defaultProfile", ValueType::DefaultProfile },
         pair_type{ "persistedWindowLayout", ValueType::PersistedWindowLayout },
+        pair_type{ "persistedWindowLayoutIncludingHandoff", ValueType::PersistedWindowLayoutIncludingHandoff },
     };
 };
 

@@ -326,6 +326,10 @@
     <value>Open windows from a previous session</value>
     <comment>An option to choose from for the "First window preference" setting. Reopen the layouts from the last session.</comment>
   </data>
+  <data name="Globals_FirstWindowPreferencePersistedWindowLayoutIncludingHandoff.Content" xml:space="preserve">
+    <value>Open windows from a previous session including handoff</value>
+    <comment>An option to choose from for the "First window preference" setting. Reopen the layouts from the last session.</comment>
+  </data>
   <data name="Globals_LaunchMode.Header" xml:space="preserve">
     <value>Launch mode</value>
     <comment>Header for a control to select what mode to launch the terminal in.</comment>

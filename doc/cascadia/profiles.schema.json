@@ -71,7 +71,7 @@
         }
       }
       ]
-    }, 
+    },
     "AppearanceConfig": {
       "properties": {
         "colorScheme": {
@@ -1805,10 +1805,11 @@
         },
         "firstWindowPreference": {
           "default": "defaultProfile",
-          "description": "Defines what behavior the terminal takes when it starts. \"defaultProfile\" will have the terminal launch with one tab of the default profile, and \"persistedWindowLayout\" will cause the terminal to save its layout on close and reload it on open.",
+          "description": "Defines what behavior the terminal takes when it starts. \"defaultProfile\" will have the terminal launch with one tab of the default profile, and \"persistedWindowLayout\" will cause the terminal to save its layout on close and reload it on open. \"persistedWindowLayoutIncludingHandoff\" extends this to also include sessions that TBD",
           "enum": [
             "defaultProfile",
-            "persistedWindowLayout"
+            "persistedWindowLayout",
+            "persistedWindowLayoutIncludingHandoff"
           ],
           "type": "string"
         },
@@ -1972,7 +1973,7 @@
             "afterLastTab",
             "afterCurrentTab"
           ],
-          "type": "string"        
+          "type": "string"
         },
         "autoHideWindow": {
           "default": false,

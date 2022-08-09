@@ -179,17 +179,28 @@ NewTerminalArgs Pane::GetTerminalArgsForPane() const
 // - The state from building the startup actions, includes a vector of commands,
 //   the original root pane, the id of the focused pane, and the number of panes
 //   created.
-Pane::BuildStartupState Pane::BuildStartupActions(uint32_t currentId, uint32_t nextId)
+Pane::BuildStartupState Pane::BuildStartupActions(bool persistDefTerm, uint32_t currentId, uint32_t nextId)
 {
-    // if we are a leaf then all there is to do is defer to the parent.
-    if (_IsLeaf())
+    auto self = this;
+    if (!persistDefTerm && !_IsLeaf())
     {
-        if (_lastActive)
+        const auto firstIsDefTerm = _firstChild->_isDefTermSession;
+        const auto secondIsDefTerm = _secondChild->_isDefTermSession;
+        // persistDefTerm is false - we don't want to store any DefTerm/handoff panes.
+        // If both or neither are DefTerm panes, then we can treat this as a regular split (self == this).
+        // But otherwise we "resolve"/remove this split pane and only persist the pane that isn't DefTerm.
+        self = firstIsDefTerm == secondIsDefTerm ? this : (firstIsDefTerm ? _secondChild.get() : _firstChild.get());
+    }
+
+    // if we are a leaf then all there is to do is defer to the parent.
+    if (self->_IsLeaf())
+    {
+        if (self->_lastActive)
         {
-            return { {}, shared_from_this(), currentId, 0 };
+            return { {}, self->shared_from_this(), currentId, 0 };
         }
 
-        return { {}, shared_from_this(), std::nullopt, 0 };
+        return { {}, self->shared_from_this(), std::nullopt, 0 };
     }
 
     auto buildSplitPane = [&](auto newPane) {
@@ -218,6 +229,9 @@ Pane::BuildStartupState Pane::BuildStartupActions(uint32_t currentId, uint32_t n
     // Handle simple case of a single split (a minor optimization for clarity)
     // Here we just create the second child (by splitting) and return the first
     // child for the parent to deal with.
+    //
+    // Due to the _isDefTermSession check at the beginning
+    // we know that both children aren't DefTerm panes.
     if (_firstChild->_IsLeaf() && _secondChild->_IsLeaf())
     {
         auto actionAndArgs = buildSplitPane(_secondChild);
@@ -237,10 +251,10 @@ Pane::BuildStartupState Pane::BuildStartupActions(uint32_t currentId, uint32_t n
     // We now need to execute the commands for each side of the tree
     // We've done one split, so the first-most child will have currentId, and the
     // one after it will be incremented.
-    auto firstState = _firstChild->BuildStartupActions(currentId, nextId + 1);
+    auto firstState = _firstChild->BuildStartupActions(persistDefTerm, currentId, nextId + 1);
     // the next id for the second branch depends on how many splits were in the
     // first child.
-    auto secondState = _secondChild->BuildStartupActions(nextId, nextId + firstState.panesCreated + 1);
+    auto secondState = _secondChild->BuildStartupActions(persistDefTerm, nextId, nextId + firstState.panesCreated + 1);
 
     std::vector<ActionAndArgs> actions{};
     actions.reserve(firstState.args.size() + secondState.args.size() + 3);
@@ -2484,6 +2498,8 @@ std::pair<std::shared_ptr<Pane>, std::shared_ptr<Pane>> Pane::_Split(SplitDirect
     _splitState = actualSplitType;
     _desiredSplitPosition = 1.0f - splitSize;
     _secondChild = newPane;
+    _isDefTermSession = false;
+
     // If we want the new pane to be the first child, swap the children
     if (splitType == SplitDirection::Up || splitType == SplitDirection::Left)
     {

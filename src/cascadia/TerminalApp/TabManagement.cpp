@@ -493,7 +493,7 @@ namespace winrt::TerminalApp::implementation
         }
 
         auto t = winrt::get_self<implementation::TabBase>(tab);
-        auto actions = t->BuildStartupActions();
+        auto actions = t->BuildStartupActions(true);
         _AddPreviouslyClosedPaneOrTab(std::move(actions));
 
         _RemoveTab(tab);
@@ -803,7 +803,7 @@ namespace winrt::TerminalApp::implementation
                 // This doesn't handle refocusing anything in particular, the
                 // result will be that the last pane created is focused. In the
                 // case of a single pane that is the desired behavior anyways.
-                auto state = pane->BuildStartupActions(0, 1);
+                auto state = pane->BuildStartupActions(true, 0, 1);
                 {
                     ActionAndArgs splitPaneAction{};
                     splitPaneAction.Action(ShortcutAction::SplitPane);
