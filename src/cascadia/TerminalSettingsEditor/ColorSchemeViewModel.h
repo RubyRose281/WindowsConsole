@@ -21,15 +21,22 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     struct ColorSchemeViewModel : ColorSchemeViewModelT<ColorSchemeViewModel>, ViewModelHelper<ColorSchemeViewModel>
     {
     public:
-        ColorSchemeViewModel(const Model::ColorScheme scheme);
+        ColorSchemeViewModel(const Model::ColorScheme scheme, const Editor::ColorSchemesPageViewModel parentPageVM);
 
         winrt::hstring Name();
         void Name(winrt::hstring newName);
+        hstring ToString()
+        {
+            return Name();
+        }
+
+        bool RequestRename(winrt::hstring newName);
 
         Editor::ColorTableEntry ColorEntryAt(uint32_t index);
 
         WINRT_CALLBACK(PropertyChanged, Windows::UI::Xaml::Data::PropertyChangedEventHandler);
 
+        WINRT_PROPERTY(bool, IsInBoxScheme);
         WINRT_PROPERTY(Windows::Foundation::Collections::IVector<Editor::ColorTableEntry>, NonBrightColorTable, nullptr);
         WINRT_PROPERTY(Windows::Foundation::Collections::IVector<Editor::ColorTableEntry>, BrightColorTable, nullptr);
 
@@ -41,6 +48,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     private:
         winrt::hstring _Name;
         Model::ColorScheme _scheme;
+        Editor::ColorSchemesPageViewModel _parentPageVM{ nullptr };
 
         void _ColorEntryChangedHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Data::PropertyChangedEventArgs& args);
     };

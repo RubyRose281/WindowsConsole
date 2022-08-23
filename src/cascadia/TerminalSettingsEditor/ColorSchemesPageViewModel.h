@@ -20,17 +20,17 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void CurrentScheme(const Editor::ColorSchemeViewModel& newSelectedScheme);
         Editor::ColorSchemeViewModel CurrentScheme();
 
-        void AddNew_Click(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& e);
-
-        void RequestEnterRename();
-        bool RequestExitRename(bool saveChanges, winrt::hstring newName);
+        Editor::ColorSchemeViewModel RequestAddNew();
+        bool RequestRenameCurrentScheme(winrt::hstring newName);
         void RequestDeleteCurrentScheme();
+
+        void Edit_Click(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& e);
 
         bool CanDeleteCurrentScheme() const;
 
         WINRT_CALLBACK(PropertyChanged, Windows::UI::Xaml::Data::PropertyChangedEventHandler);
 
-        WINRT_OBSERVABLE_PROPERTY(bool, InRenameMode, _PropertyChangedHandlers, false);
+        WINRT_OBSERVABLE_PROPERTY(ColorSchemesSubPage, CurrentPage, _PropertyChangedHandlers, ColorSchemesSubPage::Base);
         WINRT_OBSERVABLE_PROPERTY(Windows::Foundation::Collections::IObservableVector<Editor::ColorSchemeViewModel>, AllColorSchemes, _PropertyChangedHandlers, nullptr);
 
     private:
@@ -39,7 +39,6 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Windows::Foundation::Collections::IMap<Editor::ColorSchemeViewModel, Model::ColorScheme> _viewModelToSchemeMap;
 
         void _MakeColorSchemeVMsHelper();
-        Editor::ColorSchemeViewModel _AddNewScheme();
     };
 };
 
