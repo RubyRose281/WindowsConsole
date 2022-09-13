@@ -88,7 +88,7 @@
 
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>dwrite.lib;dxgi.lib;d2d1.lib;d3d11.lib;shcore.lib;winmm.lib;pathcch.lib;propsys.lib;uiautomationcore.lib;Shlwapi.lib;ntdll.lib;user32.lib;kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d2d1.lib;d3d11.lib;dcomp.lib;dwrite.lib;dxgi.lib;kernel32.lib;ntdll.lib;pathcch.lib;propsys.lib;shcore.lib;Shlwapi.lib;uiautomationcore.lib;user32.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <!--
       ControlLib contains a DllMain that we need to force the use of.
       If you don't have this, then you'll see an error like

@@ -76,6 +76,8 @@ namespace Microsoft::Console::Render
                                               const FontInfoDesired& FontInfoDesired,
                                               _Out_ FontInfo& FontInfo);
 
+        void SetWindowSize(til::size pixels) noexcept;
+
         bool IsGlyphWideByFont(const std::wstring_view glyph);
 
         void EnablePainting();

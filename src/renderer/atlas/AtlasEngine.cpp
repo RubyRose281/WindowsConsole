@@ -4,12 +4,11 @@
 #include "pch.h"
 #include "AtlasEngine.h"
 
+#include "dwrite.h"
+#include "../../interactivity/win32/CustomWindowMessages.h"
+
 #include <custom_shader_ps.h>
 #include <custom_shader_vs.h>
-#include <shader_ps.h>
-#include <shader_vs.h>
-
-#include "../../interactivity/win32/CustomWindowMessages.h"
 
 // #### NOTE ####
 // This file should only contain methods that are only accessed by the caller of Present() (the "Renderer" class).
@@ -25,44 +24,28 @@
 #pragma warning(disable : 26481) // Don't use pointer arithmetic. Use span instead (bounds.1).
 #pragma warning(disable : 26482) // Only index into arrays using constant expressions (bounds.2).
 
-using namespace Microsoft::Console::Render;
+using namespace Microsoft::Console::Render::Atlas;
 
 #pragma warning(suppress : 26455) // Default constructor may not throw. Declare it 'noexcept' (f.6).
 AtlasEngine::AtlasEngine()
 {
 #ifdef NDEBUG
-    THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, _sr.d2dFactory.addressof()));
+    THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, _p.d2dFactory.addressof()));
 #else
     static constexpr D2D1_FACTORY_OPTIONS options{ D2D1_DEBUG_LEVEL_INFORMATION };
-    THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, _sr.d2dFactory.addressof()));
+    THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, _p.d2dFactory.addressof()));
 #endif
 
-    THROW_IF_FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(_sr.dwriteFactory), reinterpret_cast<::IUnknown**>(_sr.dwriteFactory.addressof())));
-    if (const auto factory2 = _sr.dwriteFactory.try_query<IDWriteFactory2>())
-    {
-        THROW_IF_FAILED(factory2->GetSystemFontFallback(_sr.systemFontFallback.addressof()));
-    }
+    THROW_IF_FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(_p.dwriteFactory), _p.dwriteFactory.put_unknown()));
+    THROW_IF_FAILED(_p.dwriteFactory->GetSystemFontFallback(_p.systemFontFallback.addressof()));
+
     {
         wil::com_ptr<IDWriteTextAnalyzer> textAnalyzer;
-        THROW_IF_FAILED(_sr.dwriteFactory->CreateTextAnalyzer(textAnalyzer.addressof()));
-        _sr.textAnalyzer = textAnalyzer.query<IDWriteTextAnalyzer1>();
+        THROW_IF_FAILED(_p.dwriteFactory->CreateTextAnalyzer(textAnalyzer.addressof()));
+        _p.textAnalyzer = textAnalyzer.query<IDWriteTextAnalyzer1>();
     }
 
-    _sr.isWindows10OrGreater = IsWindows10OrGreater();
-
-#ifndef NDEBUG
-    {
-        _sr.sourceDirectory = std::filesystem::path{ __FILE__ }.parent_path();
-        _sr.sourceCodeWatcher = wil::make_folder_change_reader_nothrow(_sr.sourceDirectory.c_str(), false, wil::FolderChangeEvents::FileName | wil::FolderChangeEvents::LastWriteTime, [this](wil::FolderChangeEvent, PCWSTR path) {
-            if (til::ends_with(path, L".hlsl"))
-            {
-                auto expected = INT64_MAX;
-                const auto invalidationTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-                _sr.sourceCodeInvalidationTime.compare_exchange_strong(expected, invalidationTime.time_since_epoch().count(), std::memory_order_relaxed);
-            }
-        });
-    }
-#endif
+    DWrite_GetRenderParams(_p.dwriteFactory.get(), &_p.gamma, &_p.cleartypeEnhancedContrast, &_p.grayscaleEnhancedContrast, _p.renderingParams.addressof());
 }
 
 #pragma region IRenderEngine
@@ -72,101 +55,43 @@ AtlasEngine::AtlasEngine()
 [[nodiscard]] HRESULT AtlasEngine::StartPaint() noexcept
 try
 {
-    if (_api.hwnd)
+    if (_api.invalidatedTitle)
     {
-        RECT rect;
-        LOG_IF_WIN32_BOOL_FALSE(GetClientRect(_api.hwnd, &rect));
-        std::ignore = SetWindowSize({ rect.right - rect.left, rect.bottom - rect.top });
-
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Title))
-        {
-            LOG_IF_WIN32_BOOL_FALSE(PostMessageW(_api.hwnd, CM_UPDATE_TITLE, 0, 0));
-            WI_ClearFlag(_api.invalidations, ApiInvalidations::Title);
-        }
+        LOG_IF_WIN32_BOOL_FALSE(PostMessageW(_api.s->target->hwnd, CM_UPDATE_TITLE, 0, 0));
+        _api.invalidatedTitle = false;
     }
 
-    // It's important that we invalidate here instead of in Present() with the rest.
-    // Other functions, those called before Present(), might depend on _r fields.
-    // But most of the time _invalidations will be ::none, making this very cheap.
-    if (_api.invalidations != ApiInvalidations::None)
+    if (_p.s != _api.s) [[unlikely]]
     {
-        RETURN_HR_IF(E_UNEXPECTED, _api.cellCount == u16x2{});
+        const auto fontChanged = _p.s->font != _api.s->font;
+        const auto targetSizeChanged = _p.s->targetSize != _api.s->targetSize;
+        const auto cellCountChanged = _p.s->cellCount != _api.s->cellCount;
 
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Device))
-        {
-            _createResources();
-        }
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::SwapChain))
-        {
-            _createSwapChain();
-        }
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Size))
-        {
-            _recreateSizeDependentResources();
-        }
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Font))
+        _p.s = _api.s;
+
+        if (fontChanged)
         {
             _recreateFontDependentResources();
         }
-        if (WI_IsFlagSet(_api.invalidations, ApiInvalidations::Settings))
+        // This block has to be after _recreateFontDependentResources(),
+        // because it accesses _p.tileAllocator which is only created there.
+        if (targetSizeChanged)
         {
-            _r.selectionColor = _api.selectionColor;
-            WI_SetFlag(_r.invalidations, RenderInvalidations::ConstBuffer);
-            WI_ClearFlag(_api.invalidations, ApiInvalidations::Settings);
+            _p.tileAllocator.setMaxArea(_p.s->targetSize);
+        }
+        if (fontChanged || cellCountChanged)
+        {
+            _recreateSizeDependentResources();
         }
 
-        // Equivalent to InvalidateAll().
         _api.invalidatedRows = invalidatedRowsAll;
     }
 
-#ifndef NDEBUG
-    if (const auto invalidationTime = _sr.sourceCodeInvalidationTime.load(std::memory_order_relaxed); invalidationTime != INT64_MAX && invalidationTime <= std::chrono::steady_clock::now().time_since_epoch().count())
-    {
-        _sr.sourceCodeInvalidationTime.store(INT64_MAX, std::memory_order_relaxed);
-
-        try
-        {
-            static const auto compile = [](const std::filesystem::path& path, const char* target) {
-                wil::com_ptr<ID3DBlob> error;
-                wil::com_ptr<ID3DBlob> blob;
-                const auto hr = D3DCompileFromFile(
-                    /* pFileName   */ path.c_str(),
-                    /* pDefines    */ nullptr,
-                    /* pInclude    */ D3D_COMPILE_STANDARD_FILE_INCLUDE,
-                    /* pEntrypoint */ "main",
-                    /* pTarget     */ target,
-                    /* Flags1      */ D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS,
-                    /* Flags2      */ 0,
-                    /* ppCode      */ blob.addressof(),
-                    /* ppErrorMsgs */ error.addressof());
-
-                if (error)
-                {
-                    std::thread t{ [error = std::move(error)]() noexcept {
-                        MessageBoxA(nullptr, static_cast<const char*>(error->GetBufferPointer()), "Compilation error", MB_ICONERROR | MB_OK);
-                    } };
-                    t.detach();
-                }
-
-                THROW_IF_FAILED(hr);
-                return blob;
-            };
-
-            const auto vs = compile(_sr.sourceDirectory / L"shader_vs.hlsl", "vs_4_1");
-            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "ps_4_1");
-
-            THROW_IF_FAILED(_r.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, _r.vertexShader.put()));
-            THROW_IF_FAILED(_r.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.pixelShader.put()));
-            _setShaderResources();
-        }
-        CATCH_LOG()
-    }
-#endif
-
     if constexpr (debugGlyphGenerationPerformance)
     {
-        _r.glyphs = {};
-        _r.tileAllocator = TileAllocator{ _api.fontMetrics.cellSize, _api.sizeInPixel };
+        _p.glyphs = {};
+        _p.tileAllocator = TileAllocator{ _p.s->font->cellSize };
+        _p.tileAllocator.setMaxArea(_p.s->targetSize);
     }
     if constexpr (debugTextParsingPerformance)
     {
@@ -176,17 +101,17 @@ try
 
     // Clamp invalidation rects into valid value ranges.
     {
-        _api.invalidatedCursorArea.left = std::min(_api.invalidatedCursorArea.left, _api.cellCount.x);
-        _api.invalidatedCursorArea.top = std::min(_api.invalidatedCursorArea.top, _api.cellCount.y);
-        _api.invalidatedCursorArea.right = clamp(_api.invalidatedCursorArea.right, _api.invalidatedCursorArea.left, _api.cellCount.x);
-        _api.invalidatedCursorArea.bottom = clamp(_api.invalidatedCursorArea.bottom, _api.invalidatedCursorArea.top, _api.cellCount.y);
+        _api.invalidatedCursorArea.left = std::min(_api.invalidatedCursorArea.left, _api.s->cellCount.x);
+        _api.invalidatedCursorArea.top = std::min(_api.invalidatedCursorArea.top, _api.s->cellCount.y);
+        _api.invalidatedCursorArea.right = clamp(_api.invalidatedCursorArea.right, _api.invalidatedCursorArea.left, _api.s->cellCount.x);
+        _api.invalidatedCursorArea.bottom = clamp(_api.invalidatedCursorArea.bottom, _api.invalidatedCursorArea.top, _api.s->cellCount.y);
     }
     {
-        _api.invalidatedRows.x = std::min(_api.invalidatedRows.x, _api.cellCount.y);
-        _api.invalidatedRows.y = clamp(_api.invalidatedRows.y, _api.invalidatedRows.x, _api.cellCount.y);
+        _api.invalidatedRows.x = std::min(_api.invalidatedRows.x, _api.s->cellCount.y);
+        _api.invalidatedRows.y = clamp(_api.invalidatedRows.y, _api.invalidatedRows.x, _api.s->cellCount.y);
     }
     {
-        const auto limit = gsl::narrow_cast<i16>(_api.cellCount.y & 0x7fff);
+        const auto limit = gsl::narrow_cast<i16>(_api.s->cellCount.y & 0x7fff);
         _api.scrollOffset = gsl::narrow_cast<i16>(clamp<int>(_api.scrollOffset, -limit, limit));
     }
 
@@ -194,14 +119,14 @@ try
     if (_api.scrollOffset != 0)
     {
         const auto nothingInvalid = _api.invalidatedRows.x == _api.invalidatedRows.y;
-        const auto offset = static_cast<ptrdiff_t>(_api.scrollOffset) * _api.cellCount.x;
+        const auto offset = static_cast<ptrdiff_t>(_api.scrollOffset) * _api.s->cellCount.x;
 
         if (_api.scrollOffset < 0)
         {
             // Scroll up (for instance when new text is being written at the end of the buffer).
-            const u16 endRow = _api.cellCount.y + _api.scrollOffset;
+            const u16 endRow = _api.s->cellCount.y + _api.scrollOffset;
             _api.invalidatedRows.x = nothingInvalid ? endRow : std::min<u16>(_api.invalidatedRows.x, endRow);
-            _api.invalidatedRows.y = _api.cellCount.y;
+            _api.invalidatedRows.y = _api.s->cellCount.y;
 
             // scrollOffset/offset = -1
             // +----------+    +----------+
@@ -210,13 +135,13 @@ try
             // |xxxxxxx   |    |          |  |      v
             // +----------+    +----------+  v             < end
             {
-                const auto beg = _r.cells.begin();
-                const auto end = _r.cells.end();
+                const auto beg = _p.cells.begin();
+                const auto end = _p.cells.end();
                 std::move(beg - offset, end, beg);
             }
             {
-                const auto beg = _r.cellGlyphMapping.begin();
-                const auto end = _r.cellGlyphMapping.end();
+                const auto beg = _p.cellGlyphMapping.begin();
+                const auto end = _p.cellGlyphMapping.end();
                 std::move(beg - offset, end, beg);
             }
         }
@@ -233,21 +158,21 @@ try
             // |          |    |xxxxxxx   |  v      |      < end - offset
             // +----------+    +----------+         + dst  < end
             {
-                const auto beg = _r.cells.begin();
-                const auto end = _r.cells.end();
+                const auto beg = _p.cells.begin();
+                const auto end = _p.cells.end();
                 std::move_backward(beg, end - offset, end);
             }
             {
-                const auto beg = _r.cellGlyphMapping.begin();
-                const auto end = _r.cellGlyphMapping.end();
+                const auto beg = _p.cellGlyphMapping.begin();
+                const auto end = _p.cellGlyphMapping.end();
                 std::move_backward(beg, end - offset, end);
             }
         }
     }
 
-    _api.dirtyRect = til::rect{ 0, _api.invalidatedRows.x, _api.cellCount.x, _api.invalidatedRows.y };
-    _r.dirtyRect = _api.dirtyRect;
-    _r.scrollOffset = _api.scrollOffset;
+    _api.dirtyRect = til::rect{ 0, _api.invalidatedRows.x, _api.s->cellCount.x, _api.invalidatedRows.y };
+    _p.dirtyRect = _api.dirtyRect;
+    _p.scrollOffset = _api.scrollOffset;
 
     // This is an important block of code for our TileHashMap.
     // We only process glyphs within the dirtyRect, but glyphs outside of the
@@ -260,9 +185,9 @@ try
     {
         const std::array<til::point, 2> ranges{ {
             { 0, _api.dirtyRect.top },
-            { _api.dirtyRect.bottom, _api.cellCount.y },
+            { _api.dirtyRect.bottom, _api.s->cellCount.y },
         } };
-        const auto stride = static_cast<size_t>(_r.cellCount.x);
+        const auto stride = static_cast<size_t>(_p.s->cellCount.x);
 
         for (const auto& p : ranges)
         {
@@ -273,21 +198,17 @@ try
 
             for (auto y = from; y < to; ++y)
             {
-                auto it = _r.cellGlyphMapping.data() + stride * y;
+                auto it = _p.cellGlyphMapping.data() + stride * y;
                 const auto end = it + stride;
                 for (; it != end; ++it)
                 {
-                    _r.glyphs.makeNewest(*it);
+                    _p.glyphs.makeNewest(*it);
                 }
             }
         }
     }
 
     return S_OK;
-}
-catch (const wil::ResultException& exception)
-{
-    return _handleException(exception);
 }
 CATCH_RETURN()
 
@@ -338,8 +259,8 @@ CATCH_RETURN()
 [[nodiscard]] HRESULT AtlasEngine::PaintBufferLine(const gsl::span<const Cluster> clusters, const til::point coord, const bool fTrimLeft, const bool lineWrapped) noexcept
 try
 {
-    const auto x = gsl::narrow_cast<u16>(clamp<int>(coord.X, 0, _api.cellCount.x));
-    const auto y = gsl::narrow_cast<u16>(clamp<int>(coord.Y, 0, _api.cellCount.y));
+    const auto x = gsl::narrow_cast<u16>(clamp<int>(coord.X, 0, _api.s->cellCount.x));
+    const auto y = gsl::narrow_cast<u16>(clamp<int>(coord.Y, 0, _api.s->cellCount.y));
 
     if (_api.lastPaintBufferLineCoord.y != y)
     {
@@ -411,7 +332,7 @@ try
         rect.narrow_bottom<u16>(),
     };
     _setCellFlags(u16rect, CellFlags::Selected, CellFlags::Selected);
-    _r.dirtyRect |= rect;
+    _p.dirtyRect |= rect;
     return S_OK;
 }
 CATCH_RETURN()
@@ -425,15 +346,15 @@ try
     _flushBufferLine();
 
     {
-        const CachedCursorOptions cachedOptions{
+        const CursorSettings cursorSettings{
             gsl::narrow_cast<u32>(options.fUseColor ? options.cursorColor | 0xff000000 : INVALID_COLOR),
             gsl::narrow_cast<u16>(options.cursorType),
             gsl::narrow_cast<u8>(options.ulCursorHeightPercent),
         };
-        if (_r.cursorOptions != cachedOptions)
+        if (*_p.s->cursor != cursorSettings)
         {
-            _r.cursorOptions = cachedOptions;
-            WI_SetFlag(_r.invalidations, RenderInvalidations::Cursor);
+            *_p.s.write()->cursor.write() = cursorSettings;
+            *_api.s.write()->cursor.write() = cursorSettings;
         }
     }
 
@@ -441,7 +362,7 @@ try
     if (const auto r = _api.invalidatedCursorArea; r.non_empty())
     {
         _setCellFlags(r, CellFlags::Cursor, CellFlags::None);
-        _r.dirtyRect |= til::rect{ r.left, r.top, r.right, r.bottom };
+        _p.dirtyRect |= til::rect{ r.left, r.top, r.right, r.bottom };
     }
 
     if (options.isOn)
@@ -449,13 +370,13 @@ try
         const auto point = options.coordCursor;
         // TODO: options.coordCursor can contain invalid out of bounds coordinates when
         // the window is being resized and the cursor is on the last line of the viewport.
-        const auto x = gsl::narrow_cast<uint16_t>(clamp(point.X, 0, _r.cellCount.x - 1));
-        const auto y = gsl::narrow_cast<uint16_t>(clamp(point.Y, 0, _r.cellCount.y - 1));
+        const auto x = gsl::narrow_cast<uint16_t>(clamp(point.X, 0, _p.s->cellCount.x - 1));
+        const auto y = gsl::narrow_cast<uint16_t>(clamp(point.Y, 0, _p.s->cellCount.y - 1));
         const auto cursorWidth = 1 + (options.fIsDoubleWidth & (options.cursorType != CursorType::VerticalBar));
-        const auto right = gsl::narrow_cast<uint16_t>(clamp(x + cursorWidth, 0, _r.cellCount.x - 0));
+        const auto right = gsl::narrow_cast<uint16_t>(clamp(x + cursorWidth, 0, _p.s->cellCount.x - 0));
         const auto bottom = gsl::narrow_cast<uint16_t>(y + 1);
         _setCellFlags({ x, y, right, bottom }, CellFlags::Cursor, CellFlags::Cursor);
-        _r.dirtyRect |= til::rect{ x, y, right, bottom };
+        _p.dirtyRect |= til::rect{ x, y, right, bottom };
     }
 
     return S_OK;
@@ -501,10 +422,10 @@ try
         _api.attributes = attributes;
         _api.flags = flags;
     }
-    else if (textAttributes.BackgroundIsDefault() && bg != _r.backgroundColor)
+    else if (textAttributes.BackgroundIsDefault() && bg != _p.s->misc->backgroundColor)
     {
-        _r.backgroundColor = bg;
-        WI_SetFlag(_r.invalidations, RenderInvalidations::ConstBuffer);
+        _p.s.write()->misc.write()->backgroundColor = bg;
+        _api.s.write()->misc.write()->backgroundColor = bg;
     }
 
     return S_OK;
@@ -518,18 +439,16 @@ CATCH_RETURN()
     const auto hr = exception.GetErrorCode();
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET || hr == D2DERR_RECREATE_TARGET)
     {
-        WI_SetFlag(_api.invalidations, ApiInvalidations::Device);
+        _p.dxgiFactory.reset();
+        _r = {};
         return E_PENDING; // Indicate a retry to the renderer
     }
 
-    // NOTE: This isn't thread safe, as _handleException is called by AtlasEngine.r.cpp.
-    // However it's not too much of a concern at the moment as SetWarningCallback()
-    // is only called once during construction in practice.
-    if (_api.warningCallback)
+    if (_p.warningCallback)
     {
         try
         {
-            _api.warningCallback(hr);
+            _p.warningCallback(hr);
         }
         CATCH_LOG()
     }
@@ -537,501 +456,374 @@ CATCH_RETURN()
     return hr;
 }
 
-void AtlasEngine::_createResources()
+void AtlasEngine::_recreateBackend()
 {
-    _releaseSwapChain();
-    _r = {};
-
-#ifdef NDEBUG
-    static constexpr
+#if !defined(NDEBUG)
+    // DXGIGetDebugInterface1 returns E_NOINTERFACE on systems without the Windows SDK installed.
+    if (wil::com_ptr<IDXGIInfoQueue> infoQueue; SUCCEEDED_LOG(DXGIGetDebugInterface1(0, IID_PPV_ARGS(infoQueue.addressof()))))
+    {
+        // I didn't want to link with dxguid.lib just for getting DXGI_DEBUG_ALL. This GUID is publicly documented.
+        static constexpr GUID dxgiDebugAll{ 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
+        for (const auto severity : std::array{ DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING })
+        {
+            infoQueue->SetBreakOnSeverity(dxgiDebugAll, severity, true);
+        }
+    }
 #endif
-        auto deviceFlags = D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
-#ifndef NDEBUG
-    // DXGI debug messages + enabling D3D11_CREATE_DEVICE_DEBUG if the Windows SDK was installed.
-    if (const wil::unique_hmodule module{ LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32) })
-    {
-        deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-
-        if (const auto DXGIGetDebugInterface1 = GetProcAddressByFunctionDeclaration(module.get(), DXGIGetDebugInterface1))
-        {
-            if (wil::com_ptr<IDXGIInfoQueue> infoQueue; SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(infoQueue.addressof()))))
-            {
-                // I didn't want to link with dxguid.lib just for getting DXGI_DEBUG_ALL. This GUID is publicly documented.
-                static constexpr GUID dxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
-                for (const auto severity : std::array{ DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING })
-                {
-                    infoQueue->SetBreakOnSeverity(dxgiDebugAll, severity, true);
-                }
-            }
-
-            if (wil::com_ptr<IDXGIDebug1> debug; SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(debug.addressof()))))
-            {
-                debug->EnableLeakTrackingForThread();
-            }
-        }
-    }
-#endif // NDEBUG
-
-    // D3D device setup (basically a D3D class factory)
-    {
-        wil::com_ptr<ID3D11DeviceContext> deviceContext;
-
-        static constexpr std::array featureLevels{
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-            D3D_FEATURE_LEVEL_9_3,
-            D3D_FEATURE_LEVEL_9_2,
-            D3D_FEATURE_LEVEL_9_1,
-        };
-
-        auto hr = E_UNEXPECTED;
-
-        if (!_api.useSoftwareRendering)
-        {
-            // Why D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS:
-            // This flag prevents the driver from creating a large thread pool for things like shader computations
-            // that would be advantageous for games. For us this has only a minimal performance benefit,
-            // but comes with a large memory usage overhead. At the time of writing the Nvidia
-            // driver launches $cpu_thread_count more worker threads without this flag.
-            hr = D3D11CreateDevice(
-                /* pAdapter */ nullptr,
-                /* DriverType */ D3D_DRIVER_TYPE_HARDWARE,
-                /* Software */ nullptr,
-                /* Flags */ deviceFlags | D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS,
-                /* pFeatureLevels */ featureLevels.data(),
-                /* FeatureLevels */ gsl::narrow_cast<UINT>(featureLevels.size()),
-                /* SDKVersion */ D3D11_SDK_VERSION,
-                /* ppDevice */ _r.device.put(),
-                /* pFeatureLevel */ nullptr,
-                /* ppImmediateContext */ deviceContext.put());
-        }
-        if (FAILED(hr))
-        {
-            hr = D3D11CreateDevice(
-                /* pAdapter */ nullptr,
-                /* DriverType */ D3D_DRIVER_TYPE_WARP,
-                /* Software */ nullptr,
-                /* Flags */ deviceFlags,
-                /* pFeatureLevels */ featureLevels.data(),
-                /* FeatureLevels */ gsl::narrow_cast<UINT>(featureLevels.size()),
-                /* SDKVersion */ D3D11_SDK_VERSION,
-                /* ppDevice */ _r.device.put(),
-                /* pFeatureLevel */ nullptr,
-                /* ppImmediateContext */ deviceContext.put());
-        }
-        THROW_IF_FAILED(hr);
-
-        _r.deviceContext = deviceContext.query<ID3D11DeviceContext1>();
-    }
-
-#ifndef NDEBUG
-    // D3D debug messages
-    if (deviceFlags & D3D11_CREATE_DEVICE_DEBUG)
-    {
-        const auto infoQueue = _r.device.query<ID3D11InfoQueue>();
-        for (const auto severity : std::array{ D3D11_MESSAGE_SEVERITY_CORRUPTION, D3D11_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_SEVERITY_WARNING })
-        {
-            infoQueue->SetBreakOnSeverity(severity, true);
-        }
-    }
-#endif // NDEBUG
-
-    const auto featureLevel = _r.device->GetFeatureLevel();
-
-    {
-        wil::com_ptr<IDXGIAdapter1> dxgiAdapter;
-        THROW_IF_FAILED(_r.device.query<IDXGIObject>()->GetParent(__uuidof(dxgiAdapter), dxgiAdapter.put_void()));
-        THROW_IF_FAILED(dxgiAdapter->GetParent(__uuidof(_r.dxgiFactory), _r.dxgiFactory.put_void()));
-
-        DXGI_ADAPTER_DESC1 desc;
-        THROW_IF_FAILED(dxgiAdapter->GetDesc1(&desc));
-        _r.d2dMode = debugForceD2DMode || featureLevel < D3D_FEATURE_LEVEL_10_0 || WI_IsAnyFlagSet(desc.Flags, DXGI_ADAPTER_FLAG_REMOTE | DXGI_ADAPTER_FLAG_SOFTWARE);
-    }
-
-    if (!_r.d2dMode)
-    {
-        // Our constant buffer will never get resized
-        {
-            D3D11_BUFFER_DESC desc{};
-            desc.ByteWidth = sizeof(ConstBuffer);
-            desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-            THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.constantBuffer.put()));
-        }
-
-        THROW_IF_FAILED(_r.device->CreateVertexShader(&shader_vs[0], sizeof(shader_vs), nullptr, _r.vertexShader.put()));
-        THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_ps[0], sizeof(shader_ps), nullptr, _r.pixelShader.put()));
-
-        if (!_api.customPixelShaderPath.empty())
-        {
-            const char* target = nullptr;
-            switch (featureLevel)
-            {
-            case D3D_FEATURE_LEVEL_10_0:
-                target = "ps_4_0";
-                break;
-            case D3D_FEATURE_LEVEL_10_1:
-                target = "ps_4_1";
-                break;
-            default:
-                target = "ps_5_0";
-                break;
-            }
-
-            static constexpr auto flags = D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS
-#ifdef NDEBUG
-                                          | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#if defined(NDEBUG)
+    static constexpr UINT flags = 0;
 #else
-                                          | D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+    static constexpr UINT flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
 
-            wil::com_ptr<ID3DBlob> error;
-            wil::com_ptr<ID3DBlob> blob;
-            const auto hr = D3DCompileFromFile(
-                /* pFileName   */ _api.customPixelShaderPath.c_str(),
-                /* pDefines    */ nullptr,
-                /* pInclude    */ D3D_COMPILE_STANDARD_FILE_INCLUDE,
-                /* pEntrypoint */ "main",
-                /* pTarget     */ target,
-                /* Flags1      */ flags,
-                /* Flags2      */ 0,
-                /* ppCode      */ blob.addressof(),
-                /* ppErrorMsgs */ error.addressof());
+    THROW_IF_FAILED(CreateDXGIFactory2(flags, __uuidof(IDXGIFactory3), _p.dxgiFactory.put_void()));
 
-            // Unless we can determine otherwise, assume this shader requires evaluation every frame
-            _r.requiresContinuousRedraw = true;
+    auto d2dMode = debugForceD2DMode;
+    auto deviceFlags = D3D11_CREATE_DEVICE_SINGLETHREADED
+#if !defined(NDEBUG)
+                       | D3D11_CREATE_DEVICE_DEBUG
+#endif
+                       // This flag prevents the driver from creating a large thread pool for things like shader computations
+                       // that would be advantageous for games. For us this has only a minimal performance benefit,
+                       // but comes with a large memory usage overhead. At the time of writing the Nvidia
+                       // driver launches $cpu_thread_count more worker threads without this flag.
+                       | D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS
+                       // Direct2D support.
+                       | D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
-            if (SUCCEEDED(hr))
+    wil::com_ptr<IDXGIAdapter1> dxgiAdapter;
+    THROW_IF_FAILED(_p.dxgiFactory->EnumAdapters1(0, dxgiAdapter.addressof()));
+
+    {
+        auto findSoftwareAdapter = _r.useSoftwareRendering;
+        auto adapter = dxgiAdapter;
+        UINT i = 0;
+
+        for (;;)
+        {
+            DXGI_ADAPTER_DESC1 desc;
+            THROW_IF_FAILED(adapter->GetDesc1(&desc));
+
+            // Switch to D2D mode if any adapter is a remote adapter (RDP).
+            d2dMode |= WI_IsFlagSet(desc.Flags, DXGI_ADAPTER_FLAG_REMOTE);
+
+            // If useSoftwareRendering is true we search for the first WARP adapter.
+            if (findSoftwareAdapter && WI_IsFlagSet(desc.Flags, DXGI_ADAPTER_FLAG_SOFTWARE))
             {
-                THROW_IF_FAILED(_r.device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, _r.customPixelShader.put()));
+                WI_ClearFlag(deviceFlags, D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS);
+                dxgiAdapter = std::move(adapter);
+                findSoftwareAdapter = false;
+            }
 
-                // Try to determine whether the shader uses the Time variable
-                wil::com_ptr<ID3D11ShaderReflection> reflector;
-                if (SUCCEEDED_LOG(D3DReflect(blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(reflector.put()))))
+            ++i;
+            if (_p.dxgiFactory->EnumAdapters1(i, adapter.put()) == DXGI_ERROR_NOT_FOUND)
+            {
+                break;
+            }
+        }
+    }
+
+    wil::com_ptr<ID3D11Device> device0;
+    wil::com_ptr<ID3D11DeviceContext> deviceContext0;
+    D3D_FEATURE_LEVEL featureLevel{};
+
+    static constexpr std::array featureLevels{
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1,
+    };
+
+    THROW_IF_FAILED(D3D11CreateDevice(
+        /* pAdapter */ dxgiAdapter.get(),
+        /* DriverType */ D3D_DRIVER_TYPE_UNKNOWN,
+        /* Software */ nullptr,
+        /* Flags */ deviceFlags,
+        /* pFeatureLevels */ featureLevels.data(),
+        /* FeatureLevels */ gsl::narrow_cast<UINT>(featureLevels.size()),
+        /* SDKVersion */ D3D11_SDK_VERSION,
+        /* ppDevice */ device0.put(),
+        /* pFeatureLevel */ &featureLevel,
+        /* ppImmediateContext */ deviceContext0.put()));
+
+    const auto device = device0.query<ID3D11Device2>();
+    const auto deviceContext = deviceContext0.query<ID3D11DeviceContext2>();
+
+    d2dMode |= featureLevel < D3D_FEATURE_LEVEL_10_0;
+
+    if (d2dMode)
+    {
+        _r.driver = std::make_unique<DriverD2D>(std::move(device), std::move(deviceContext));
+    }
+    else
+    {
+        _r.driver = std::make_unique<DriverD3D11>(std::move(device), std::move(deviceContext));
+    }
+}
+
+void DriverD3D11::_createCustomShaderResources(const RenderingPayload& p)
+{
+    _customOffscreenTexture.reset();
+    _customOffscreenTextureView.reset();
+    _customOffscreenTextureTargetView.reset();
+    _customVertexShader.reset();
+    _customPixelShader.reset();
+    _customShaderConstantBuffer.reset();
+    _customShaderSamplerState.reset();
+
+    if (!p.s->misc->customPixelShaderPath.empty())
+    {
+        const char* target = nullptr;
+        switch (_device->GetFeatureLevel())
+        {
+        case D3D_FEATURE_LEVEL_10_0:
+            target = "ps_4_0";
+            break;
+        case D3D_FEATURE_LEVEL_10_1:
+            target = "ps_4_1";
+            break;
+        default:
+            target = "ps_5_0";
+            break;
+        }
+
+        static constexpr auto flags = D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS
+#ifdef NDEBUG
+                                      | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#else
+                                      | D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+        wil::com_ptr<ID3DBlob> error;
+        wil::com_ptr<ID3DBlob> blob;
+        const auto hr = D3DCompileFromFile(
+            /* pFileName   */ p.s->misc->customPixelShaderPath.c_str(),
+            /* pDefines    */ nullptr,
+            /* pInclude    */ D3D_COMPILE_STANDARD_FILE_INCLUDE,
+            /* pEntrypoint */ "main",
+            /* pTarget     */ target,
+            /* Flags1      */ flags,
+            /* Flags2      */ 0,
+            /* ppCode      */ blob.addressof(),
+            /* ppErrorMsgs */ error.addressof());
+
+        // Unless we can determine otherwise, assume this shader requires evaluation every frame
+        _requiresContinuousRedraw = true;
+
+        if (SUCCEEDED(hr))
+        {
+            THROW_IF_FAILED(_device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, _customPixelShader.put()));
+
+            // Try to determine whether the shader uses the Time variable
+            wil::com_ptr<ID3D11ShaderReflection> reflector;
+            if (SUCCEEDED_LOG(D3DReflect(blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(reflector.put()))))
+            {
+                if (ID3D11ShaderReflectionConstantBuffer* constantBufferReflector = reflector->GetConstantBufferByIndex(0)) // shader buffer
                 {
-                    if (ID3D11ShaderReflectionConstantBuffer* constantBufferReflector = reflector->GetConstantBufferByIndex(0)) // shader buffer
+                    if (ID3D11ShaderReflectionVariable* variableReflector = constantBufferReflector->GetVariableByIndex(0)) // time
                     {
-                        if (ID3D11ShaderReflectionVariable* variableReflector = constantBufferReflector->GetVariableByIndex(0)) // time
+                        D3D11_SHADER_VARIABLE_DESC variableDescriptor;
+                        if (SUCCEEDED_LOG(variableReflector->GetDesc(&variableDescriptor)))
                         {
-                            D3D11_SHADER_VARIABLE_DESC variableDescriptor;
-                            if (SUCCEEDED_LOG(variableReflector->GetDesc(&variableDescriptor)))
-                            {
-                                // only if time is used
-                                _r.requiresContinuousRedraw = WI_IsFlagSet(variableDescriptor.uFlags, D3D_SVF_USED);
-                            }
+                            // only if time is used
+                            _requiresContinuousRedraw = WI_IsFlagSet(variableDescriptor.uFlags, D3D_SVF_USED);
                         }
                     }
                 }
             }
-            else
-            {
-                if (error)
-                {
-                    LOG_HR_MSG(hr, "%*hs", error->GetBufferSize(), error->GetBufferPointer());
-                }
-                else
-                {
-                    LOG_HR(hr);
-                }
-                if (_api.warningCallback)
-                {
-                    _api.warningCallback(D2DERR_SHADER_COMPILE_FAILED);
-                }
-            }
-        }
-        else if (_api.useRetroTerminalEffect)
-        {
-            THROW_IF_FAILED(_r.device->CreatePixelShader(&custom_shader_ps[0], sizeof(custom_shader_ps), nullptr, _r.customPixelShader.put()));
-            // We know the built-in retro shader doesn't require continuous redraw.
-            _r.requiresContinuousRedraw = false;
-        }
-
-        if (_r.customPixelShader)
-        {
-            THROW_IF_FAILED(_r.device->CreateVertexShader(&custom_shader_vs[0], sizeof(custom_shader_vs), nullptr, _r.customVertexShader.put()));
-
-            {
-                D3D11_BUFFER_DESC desc{};
-                desc.ByteWidth = sizeof(CustomConstBuffer);
-                desc.Usage = D3D11_USAGE_DYNAMIC;
-                desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-                desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-                THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.customShaderConstantBuffer.put()));
-            }
-
-            {
-                D3D11_SAMPLER_DESC desc{};
-                desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-                desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
-                desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
-                desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-                desc.MaxAnisotropy = 1;
-                desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-                desc.MaxLOD = D3D11_FLOAT32_MAX;
-                THROW_IF_FAILED(_r.device->CreateSamplerState(&desc, _r.customShaderSamplerState.put()));
-            }
-
-            _r.customShaderStartTime = std::chrono::steady_clock::now();
-        }
-    }
-
-    WI_ClearFlag(_api.invalidations, ApiInvalidations::Device);
-    WI_SetAllFlags(_api.invalidations, ApiInvalidations::SwapChain);
-}
-
-void AtlasEngine::_releaseSwapChain()
-{
-    // Flush() docs:
-    //   However, if an application must actually destroy an old swap chain and create a new swap chain,
-    //   the application must force the destruction of all objects that the application freed.
-    //   To force the destruction, call ID3D11DeviceContext::ClearState (or otherwise ensure
-    //   no views are bound to pipeline state), and then call Flush on the immediate context.
-    if (_r.swapChain && _r.deviceContext)
-    {
-        if (_r.d2dMode)
-        {
-            _r.d2dRenderTarget.reset();
-        }
-        _r.frameLatencyWaitableObject.reset();
-        _r.swapChain.reset();
-        _r.renderTargetView.reset();
-        _r.deviceContext->ClearState();
-        _r.deviceContext->Flush();
-    }
-}
-
-void AtlasEngine::_createSwapChain()
-{
-    _releaseSwapChain();
-
-    // D3D swap chain setup (the thing that allows us to present frames on the screen)
-    {
-        // With C++20 we'll finally have designated initializers.
-        DXGI_SWAP_CHAIN_DESC1 desc{};
-        desc.Width = _api.sizeInPixel.x;
-        desc.Height = _api.sizeInPixel.y;
-        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        desc.SampleDesc.Count = 1;
-        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        // Sometimes up to 2 buffers are locked, for instance during screen capture or when moving the window.
-        // 3 buffers seems to guarantee a stable framerate at display frequency at all times.
-        desc.BufferCount = 3;
-        desc.Scaling = DXGI_SCALING_NONE;
-        // DXGI_SWAP_EFFECT_FLIP_DISCARD is a mode that was created at a time were display drivers
-        // lacked support for Multiplane Overlays (MPO) and were copying buffers was expensive.
-        // This allowed DWM to quickly draw overlays (like gamebars) on top of rendered content.
-        // With faster GPU memory in general and with support for MPO in particular this isn't
-        // really an advantage anymore. Instead DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL allows for a
-        // more "intelligent" composition and display updates to occur like Panel Self Refresh
-        // (PSR) which requires dirty rectangles (Present1 API) to work correctly.
-        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-        // If our background is opaque we can enable "independent" flips by setting DXGI_ALPHA_MODE_IGNORE.
-        // As our swap chain won't have to compose with DWM anymore it reduces the display latency dramatically.
-        desc.AlphaMode = _api.backgroundOpaqueMixin ? DXGI_ALPHA_MODE_IGNORE : DXGI_ALPHA_MODE_PREMULTIPLIED;
-        desc.Flags = debugGeneralPerformance ? 0 : DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-
-        wil::com_ptr<IDXGIFactory2> dxgiFactory;
-        THROW_IF_FAILED(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.addressof())));
-
-        if (_api.hwnd)
-        {
-            THROW_IF_FAILED(dxgiFactory->CreateSwapChainForHwnd(_r.device.get(), _api.hwnd, &desc, nullptr, nullptr, _r.swapChain.put()));
         }
         else
         {
-            const wil::unique_hmodule module{ LoadLibraryExW(L"dcomp.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32) };
-            THROW_LAST_ERROR_IF(!module);
-            const auto DCompositionCreateSurfaceHandle = GetProcAddressByFunctionDeclaration(module.get(), DCompositionCreateSurfaceHandle);
-            THROW_LAST_ERROR_IF(!DCompositionCreateSurfaceHandle);
-
-            // As per: https://docs.microsoft.com/en-us/windows/win32/api/dcomp/nf-dcomp-dcompositioncreatesurfacehandle
-            static constexpr DWORD COMPOSITIONSURFACE_ALL_ACCESS = 0x0003L;
-            THROW_IF_FAILED(DCompositionCreateSurfaceHandle(COMPOSITIONSURFACE_ALL_ACCESS, nullptr, _api.swapChainHandle.put()));
-            THROW_IF_FAILED(dxgiFactory.query<IDXGIFactoryMedia>()->CreateSwapChainForCompositionSurfaceHandle(_r.device.get(), _api.swapChainHandle.get(), &desc, nullptr, _r.swapChain.put()));
-        }
-
-        if constexpr (!debugGeneralPerformance)
-        {
-            const auto swapChain2 = _r.swapChain.query<IDXGISwapChain2>();
-            _r.frameLatencyWaitableObject.reset(swapChain2->GetFrameLatencyWaitableObject());
-            THROW_LAST_ERROR_IF(!_r.frameLatencyWaitableObject);
+            if (error)
+            {
+                LOG_HR_MSG(hr, "%*hs", error->GetBufferSize(), error->GetBufferPointer());
+            }
+            else
+            {
+                LOG_HR(hr);
+            }
+            if (p.warningCallback)
+            {
+                p.warningCallback(D2DERR_SHADER_COMPILE_FAILED);
+            }
         }
     }
-
-    // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
-    // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
-    // > Note that this requirement includes the first frame the app renders with the swap chain.
-    _r.waitForPresentation = true;
-    WaitUntilCanRender();
-
-    if (_api.swapChainChangedCallback)
+    else if (p.s->misc->useRetroTerminalEffect)
     {
-        try
-        {
-            _api.swapChainChangedCallback(_api.swapChainHandle.get());
-        }
-        CATCH_LOG();
+        THROW_IF_FAILED(_device->CreatePixelShader(&custom_shader_ps[0], sizeof(custom_shader_ps), nullptr, _customPixelShader.put()));
+        // We know the built-in retro shader doesn't require continuous redraw.
+        _requiresContinuousRedraw = false;
     }
 
-    WI_ClearFlag(_api.invalidations, ApiInvalidations::SwapChain);
-    WI_SetAllFlags(_api.invalidations, ApiInvalidations::Size | ApiInvalidations::Font);
-}
-
-void AtlasEngine::_recreateSizeDependentResources()
-{
-    // ResizeBuffer() docs:
-    //   Before you call ResizeBuffers, ensure that the application releases all references [...].
-    //   You can use ID3D11DeviceContext::ClearState to ensure that all [internal] references are released.
-    // The _r.cells check exists simply to prevent us from calling ResizeBuffers() on startup (i.e. when `_r` is empty).
-    if (_r.cells)
+    if (_customPixelShader)
     {
-        if (_r.d2dMode)
+        THROW_IF_FAILED(_device->CreateVertexShader(&custom_shader_vs[0], sizeof(custom_shader_vs), nullptr, _customVertexShader.put()));
+
         {
-            _r.d2dRenderTarget.reset();
+            D3D11_BUFFER_DESC desc{};
+            desc.ByteWidth = sizeof(CustomConstBuffer);
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            THROW_IF_FAILED(_device->CreateBuffer(&desc, nullptr, _customShaderConstantBuffer.put()));
         }
-        _r.renderTargetView.reset();
-        _r.deviceContext->ClearState();
-        _r.deviceContext->Flush();
-        THROW_IF_FAILED(_r.swapChain->ResizeBuffers(0, _api.sizeInPixel.x, _api.sizeInPixel.y, DXGI_FORMAT_UNKNOWN, debugGeneralPerformance ? 0 : DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT));
-    }
 
-    const auto totalCellCount = static_cast<size_t>(_api.cellCount.x) * static_cast<size_t>(_api.cellCount.y);
-    const auto resize = _api.cellCount != _r.cellCount;
-
-    if (resize)
-    {
-        // Let's guess that every cell consists of a surrogate pair.
-        const auto projectedTextSize = static_cast<size_t>(_api.cellCount.x) * 2;
-        // IDWriteTextAnalyzer::GetGlyphs says:
-        //   The recommended estimate for the per-glyph output buffers is (3 * textLength / 2 + 16).
-        const auto projectedGlyphSize = 3 * projectedTextSize / 2 + 16;
-
-        // This buffer is a bit larger than the others (multiple MB).
-        // Prevent a memory usage spike, by first deallocating and then allocating.
-        _r.cells = {};
-        _r.cellGlyphMapping = {};
-        // Our render loop heavily relies on memcpy() which is between 1.5x
-        // and 40x faster for allocations with an alignment of 32 or greater.
-        // (40x on AMD Zen1-3, which have a rep movsb performance issue. MSFT:33358259.)
-        _r.cells = Buffer<Cell, 32>{ totalCellCount };
-        _r.cellGlyphMapping = Buffer<TileHashMap::iterator>{ totalCellCount };
-        _r.cellCount = _api.cellCount;
-        _r.tileAllocator.setMaxArea(_api.sizeInPixel);
-
-        // .clear() doesn't free the memory of these buffers.
-        // This code allows them to shrink again.
-        _api.bufferLine = {};
-        _api.bufferLine.reserve(projectedTextSize);
-        _api.bufferLineColumn.reserve(projectedTextSize + 1);
-        _api.bufferLineMetadata = Buffer<BufferLineMetadata>{ _api.cellCount.x };
-        _api.analysisResults = {};
-
-        _api.clusterMap = Buffer<u16>{ projectedTextSize };
-        _api.textProps = Buffer<DWRITE_SHAPING_TEXT_PROPERTIES>{ projectedTextSize };
-        _api.glyphIndices = Buffer<u16>{ projectedGlyphSize };
-        _api.glyphProps = Buffer<DWRITE_SHAPING_GLYPH_PROPERTIES>{ projectedGlyphSize };
-        _api.glyphAdvances = Buffer<f32>{ projectedGlyphSize };
-        _api.glyphOffsets = Buffer<DWRITE_GLYPH_OFFSET>{ projectedGlyphSize };
-    }
-
-    if (!_r.d2dMode)
-    {
-        // The RenderTargetView is later used with OMSetRenderTargets
-        // to tell D3D where stuff is supposed to be rendered at.
         {
-            wil::com_ptr<ID3D11Texture2D> buffer;
-            THROW_IF_FAILED(_r.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), buffer.put_void()));
-            THROW_IF_FAILED(_r.device->CreateRenderTargetView(buffer.get(), nullptr, _r.renderTargetView.put()));
+            D3D11_SAMPLER_DESC desc{};
+            desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+            desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+            desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+            desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+            desc.MaxAnisotropy = 1;
+            desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+            desc.MaxLOD = D3D11_FLOAT32_MAX;
+            THROW_IF_FAILED(_device->CreateSamplerState(&desc, _customShaderSamplerState.put()));
         }
-        if (_r.customPixelShader)
+
         {
             D3D11_TEXTURE2D_DESC desc{};
-            desc.Width = _api.sizeInPixel.x;
-            desc.Height = _api.sizeInPixel.y;
+            desc.Width = p.s->targetSize.x;
+            desc.Height = p.s->targetSize.y;
             desc.MipLevels = 1;
             desc.ArraySize = 1;
             desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
             desc.SampleDesc = { 1, 0 };
             desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-            THROW_IF_FAILED(_r.device->CreateTexture2D(&desc, nullptr, _r.customOffscreenTexture.addressof()));
-            THROW_IF_FAILED(_r.device->CreateShaderResourceView(_r.customOffscreenTexture.get(), nullptr, _r.customOffscreenTextureView.addressof()));
-            THROW_IF_FAILED(_r.device->CreateRenderTargetView(_r.customOffscreenTexture.get(), nullptr, _r.customOffscreenTextureTargetView.addressof()));
+            THROW_IF_FAILED(_device->CreateTexture2D(&desc, nullptr, _customOffscreenTexture.put()));
+            THROW_IF_FAILED(_device->CreateShaderResourceView(_customOffscreenTexture.get(), nullptr, _customOffscreenTextureView.put()));
+            THROW_IF_FAILED(_device->CreateRenderTargetView(_customOffscreenTexture.get(), nullptr, _customOffscreenTextureTargetView.put()));
         }
 
-        // Tell D3D which parts of the render target will be visible.
-        // Everything outside of the viewport will be black.
-        {
-            D3D11_VIEWPORT viewport{};
-            viewport.Width = static_cast<float>(_api.sizeInPixel.x);
-            viewport.Height = static_cast<float>(_api.sizeInPixel.y);
-            _r.deviceContext->RSSetViewports(1, &viewport);
-        }
+        _customShaderStartTime = std::chrono::steady_clock::now();
+    }
+}
 
-        if (resize)
-        {
-            D3D11_BUFFER_DESC desc;
-            desc.ByteWidth = gsl::narrow<u32>(totalCellCount * sizeof(Cell)); // totalCellCount can theoretically be UINT32_MAX!
-            desc.Usage = D3D11_USAGE_DYNAMIC;
-            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-            desc.StructureByteStride = sizeof(Cell);
-            THROW_IF_FAILED(_r.device->CreateBuffer(&desc, nullptr, _r.cellBuffer.put()));
-            THROW_IF_FAILED(_r.device->CreateShaderResourceView(_r.cellBuffer.get(), nullptr, _r.cellView.put()));
-        }
+void SwapChainManager::_createSwapChain(const RenderingPayload& p, IUnknown* device)
+{
+    _swapChain.reset();
+    _frameLatencyWaitableObject.reset();
 
-        // We have called _r.deviceContext->ClearState() in the beginning and lost all D3D state.
-        // This forces us to set up everything up from scratch again.
-        _setShaderResources();
+    DXGI_SWAP_CHAIN_DESC1 desc{};
+    desc.Width = p.s->targetSize.x;
+    desc.Height = p.s->targetSize.y;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    // Sometimes up to 2 buffers are locked, for instance during screen capture or when moving the window.
+    // 3 buffers seems to guarantee a stable framerate at display frequency at all times.
+    desc.BufferCount = 3;
+    desc.Scaling = DXGI_SCALING_NONE;
+    // DXGI_SWAP_EFFECT_FLIP_DISCARD is a mode that was created at a time were display drivers
+    // lacked support for Multiplane Overlays (MPO) and were copying buffers was expensive.
+    // This allowed DWM to quickly draw overlays (like gamebars) on top of rendered content.
+    // With faster GPU memory in general and with support for MPO in particular this isn't
+    // really an advantage anymore. Instead DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL allows for a
+    // more "intelligent" composition and display updates to occur like Panel Self Refresh
+    // (PSR) which requires dirty rectangles (Present1 API) to work correctly.
+    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    // If our background is opaque we can enable "independent" flips by setting DXGI_ALPHA_MODE_IGNORE.
+    // As our swap chain won't have to compose with DWM anymore it reduces the display latency dramatically.
+    desc.AlphaMode = p.s->target->enableTransparentBackground ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
+    desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+
+    wil::com_ptr<IDXGISwapChain1> swapChain0;
+
+    if (p.s->target->hwnd)
+    {
+        THROW_IF_FAILED(p.dxgiFactory->CreateSwapChainForHwnd(device, p.s->target->hwnd, &desc, nullptr, nullptr, swapChain0.addressof()));
+    }
+    else
+    {
+        // As per: https://docs.microsoft.com/en-us/windows/win32/api/dcomp/nf-dcomp-dcompositioncreatesurfacehandle
+        static constexpr DWORD COMPOSITIONSURFACE_ALL_ACCESS = 0x0003L;
+        THROW_IF_FAILED(DCompositionCreateSurfaceHandle(COMPOSITIONSURFACE_ALL_ACCESS, nullptr, _swapChainHandle.addressof()));
+        THROW_IF_FAILED(p.dxgiFactory.query<IDXGIFactoryMedia>()->CreateSwapChainForCompositionSurfaceHandle(device, _swapChainHandle.get(), &desc, nullptr, swapChain0.addressof()));
     }
 
-    WI_ClearFlag(_api.invalidations, ApiInvalidations::Size);
-    WI_SetAllFlags(_r.invalidations, RenderInvalidations::ConstBuffer);
+    _swapChain = swapChain0.query<IDXGISwapChain2>();
+    _targetGeneration = p.s->target.generation();
+    _targetSize = p.s->targetSize;
+    _waitForPresentation = true;
+
+    WaitUntilCanRender();
+
+    if (p.swapChainChangedCallback)
+    {
+        try
+        {
+            p.swapChainChangedCallback(_swapChainHandle.get());
+        }
+        CATCH_LOG()
+    }
+}
+
+void AtlasEngine::_recreateSizeDependentResources()
+{
+    const auto totalCellCount = static_cast<size_t>(_api.s->cellCount.x) * static_cast<size_t>(_api.s->cellCount.y);
+    // Let's guess that every cell consists of a surrogate pair.
+    const auto projectedTextSize = static_cast<size_t>(_api.s->cellCount.x) * 2;
+    // IDWriteTextAnalyzer::GetGlyphs says:
+    //   The recommended estimate for the per-glyph output buffers is (3 * textLength / 2 + 16).
+    const auto projectedGlyphSize = 3 * projectedTextSize / 2 + 16;
+
+    // This buffer is a bit larger than the others (multiple MB).
+    // Prevent a memory usage spike, by first deallocating and then allocating.
+    _p.cells = {};
+    _p.cellGlyphMapping = {};
+    // Our render loop heavily relies on memcpy() which is between 1.5x
+    // and 40x faster for allocations with an alignment of 32 or greater.
+    // (40x on AMD Zen1-3, which have a rep movsb performance issue. MSFT:33358259.)
+    _p.cells = Buffer<Cell, 32>{ totalCellCount };
+    _p.cellGlyphMapping = Buffer<TileHashMap::iterator>{ totalCellCount };
+
+    // .clear() doesn't free the memory of these buffers.
+    // This code allows them to shrink again.
+    _api.bufferLine = {};
+    _api.bufferLine.reserve(projectedTextSize);
+    _api.bufferLineColumn.reserve(projectedTextSize + 1);
+    _api.bufferLineMetadata = Buffer<BufferLineMetadata>{ _api.s->cellCount.x };
+    _api.analysisResults = {};
+
+    _api.clusterMap = Buffer<u16>{ projectedTextSize };
+    _api.textProps = Buffer<DWRITE_SHAPING_TEXT_PROPERTIES>{ projectedTextSize };
+    _api.glyphIndices = Buffer<u16>{ projectedGlyphSize };
+    _api.glyphProps = Buffer<DWRITE_SHAPING_GLYPH_PROPERTIES>{ projectedGlyphSize };
+    _api.glyphAdvances = Buffer<f32>{ projectedGlyphSize };
+    _api.glyphOffsets = Buffer<DWRITE_GLYPH_OFFSET>{ projectedGlyphSize };
+
+    // Initialize cellGlyphMapping with valid data (whitespace), so that it can be
+    // safely used by the TileHashMap refresh logic via makeNewest() in StartPaint().
+    {
+        u16x2* coords;
+        AtlasKey key{ { .cellCount = 1 }, 1, L" " };
+        AtlasValue value{ CellFlags::None, 1, &coords };
+
+        coords[0] = _p.tileAllocator.allocate(_p.glyphs);
+
+        const auto it = _p.glyphs.insert(std::move(key), std::move(value));
+        _p.glyphQueue.emplace_back(it);
+
+        std::ranges::fill(_p.cellGlyphMapping, it);
+    }
 }
 
 void AtlasEngine::_recreateFontDependentResources()
 {
     {
-        // We're likely resizing the atlas anyways and can
-        // thus also release any of these buffers prematurely.
-        _r.d2dRenderTarget.reset(); // depends on _r.atlasBuffer
-        _r.atlasView.reset();
-        _r.atlasBuffer.reset();
-    }
-
-    // D3D
-    {
         const auto scaling = GetScaling();
 
-        _r.cellSizeDIP.x = static_cast<float>(_api.fontMetrics.cellSize.x) / scaling;
-        _r.cellSizeDIP.y = static_cast<float>(_api.fontMetrics.cellSize.y) / scaling;
-        _r.cellCount = _api.cellCount;
-        _r.dpi = _api.dpi;
-        _r.fontMetrics = _api.fontMetrics;
-        _r.dipPerPixel = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / static_cast<float>(_r.dpi);
-        _r.pixelPerDIP = static_cast<float>(_r.dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
-        _r.atlasSizeInPixel = { 0, 0 };
-        _r.tileAllocator = TileAllocator{ _api.fontMetrics.cellSize, _api.sizeInPixel };
-
-        _r.glyphs = {};
-        _r.glyphQueue = {};
-        _r.glyphQueue.reserve(64);
-    }
-    // D3D specifically for UpdateDpi()
-    // This compensates for the built in scaling factor in a XAML SwapChainPanel (CompositionScaleX/Y).
-    if (!_api.hwnd)
-    {
-        if (const auto swapChain2 = _r.swapChain.try_query<IDXGISwapChain2>())
-        {
-            const auto inverseScale = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / static_cast<float>(_api.dpi);
-            DXGI_MATRIX_3X2_F matrix{};
-            matrix._11 = inverseScale;
-            matrix._22 = inverseScale;
-            THROW_IF_FAILED(swapChain2->SetMatrixTransform(&matrix));
-        }
+        _p.d.font.cellSizeDIP.x = static_cast<float>(_p.s->font->cellSize.x) / scaling;
+        _p.d.font.cellSizeDIP.y = static_cast<float>(_p.s->font->cellSize.y) / scaling;
+        _p.d.font.dipPerPixel = static_cast<float>(USER_DEFAULT_SCREEN_DPI) / static_cast<float>(_p.s->font->dpi);
+        _p.d.font.pixelPerDIP = static_cast<float>(_p.s->font->dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        _p.tileAllocator = TileAllocator{ _p.s->font->cellSize };
+        _p.glyphs = {};
+        _p.glyphQueue = {};
+        _p.glyphQueue.reserve(64);
     }
 
     // D2D
@@ -1041,31 +833,18 @@ void AtlasEngine::_recreateFontDependentResources()
         // If they're -1.0f they haven't been set by the user and must be filled by us.
         // When we call SetFontAxisValues() we basically override (disable) DirectWrite's internal font axes,
         // and if either of the 3 aren't set we'd make it impossible for the user to see bold/italic text.
-#pragma warning(suppress : 26494) // Variable 'standardAxes' is uninitialized. Always initialize an object (type.5).
-        std::array<DWRITE_FONT_AXIS_VALUE, 3> standardAxes;
-
-        if (!_api.fontAxisValues.empty())
-        {
-            Expects(_api.fontAxisValues.size() >= standardAxes.size());
-            memcpy(standardAxes.data(), _api.fontAxisValues.data(), sizeof(standardAxes));
-        }
-
-        const auto restoreFontAxisValues = wil::scope_exit([&]() noexcept {
-            if (!_api.fontAxisValues.empty())
-            {
-                memcpy(_api.fontAxisValues.data(), standardAxes.data(), sizeof(standardAxes));
-            }
-        });
+        const auto& standardAxes = _p.s->font->fontAxisValues;
+        auto fontAxisValues = _p.s->font->fontAxisValues;
 
         for (auto italic = 0; italic < 2; ++italic)
         {
             for (auto bold = 0; bold < 2; ++bold)
             {
-                const auto fontWeight = bold ? DWRITE_FONT_WEIGHT_BOLD : static_cast<DWRITE_FONT_WEIGHT>(_api.fontMetrics.fontWeight);
+                const auto fontWeight = bold ? DWRITE_FONT_WEIGHT_BOLD : static_cast<DWRITE_FONT_WEIGHT>(_p.s->font->fontWeight);
                 const auto fontStyle = italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
-                auto& textFormat = _r.textFormats[italic][bold];
+                auto& textFormat = _p.d.font.textFormats[italic][bold];
 
-                THROW_IF_FAILED(_sr.dwriteFactory->CreateTextFormat(_api.fontMetrics.fontName.c_str(), _api.fontMetrics.fontCollection.get(), fontWeight, fontStyle, DWRITE_FONT_STRETCH_NORMAL, _api.fontMetrics.fontSizeInDIP, L"", textFormat.put()));
+                THROW_IF_FAILED(_p.dwriteFactory->CreateTextFormat(_p.s->font->fontName.c_str(), _p.s->font->fontCollection.get(), fontWeight, fontStyle, DWRITE_FONT_STRETCH_NORMAL, _p.s->font->fontSizeInDIP, L"", textFormat.put()));
                 THROW_IF_FAILED(textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER));
                 THROW_IF_FAILED(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
 
@@ -1073,81 +852,78 @@ void AtlasEngine::_recreateFontDependentResources()
                 // > Lines are explicitly set to uniform spacing, regardless of contained font sizes.
                 // > This can be useful to avoid the uneven appearance that can occur from font fallback.
                 // We want that. Otherwise fallback fonts might be rendered with an incorrect baseline and get cut off vertically.
-                THROW_IF_FAILED(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, _r.cellSizeDIP.y, _api.fontMetrics.baselineInDIP));
+                THROW_IF_FAILED(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, _p.d.font.cellSizeDIP.y, _p.s->font->baselineInDIP));
 
                 if (const auto textFormat3 = textFormat.try_query<IDWriteTextFormat3>())
                 {
                     THROW_IF_FAILED(textFormat3->SetAutomaticFontAxes(DWRITE_AUTOMATIC_FONT_AXES_OPTICAL_SIZE));
 
-                    if (!_api.fontAxisValues.empty())
+                    if (!fontAxisValues.empty())
                     {
                         // The wght axis defaults to the font weight.
-                        _api.fontAxisValues[0].value = bold || standardAxes[0].value == -1.0f ? static_cast<float>(fontWeight) : standardAxes[0].value;
+                        fontAxisValues[0].value = bold || standardAxes[0].value == -1.0f ? static_cast<float>(fontWeight) : standardAxes[0].value;
                         // The ital axis defaults to 1 if this is italic and 0 otherwise.
-                        _api.fontAxisValues[1].value = italic ? 1.0f : (standardAxes[1].value == -1.0f ? 0.0f : standardAxes[1].value);
+                        fontAxisValues[1].value = italic ? 1.0f : (standardAxes[1].value == -1.0f ? 0.0f : standardAxes[1].value);
                         // The slnt axis defaults to -12 if this is italic and 0 otherwise.
-                        _api.fontAxisValues[2].value = italic ? -12.0f : (standardAxes[2].value == -1.0f ? 0.0f : standardAxes[2].value);
+                        fontAxisValues[2].value = italic ? -12.0f : (standardAxes[2].value == -1.0f ? 0.0f : standardAxes[2].value);
 
-                        THROW_IF_FAILED(textFormat3->SetFontAxisValues(_api.fontAxisValues.data(), gsl::narrow_cast<u32>(_api.fontAxisValues.size())));
-                        _r.textFormatAxes[italic][bold] = { _api.fontAxisValues.data(), _api.fontAxisValues.size() };
+                        THROW_IF_FAILED(textFormat3->SetFontAxisValues(fontAxisValues.data(), gsl::narrow_cast<u32>(fontAxisValues.size())));
+                        _p.d.font.textFormatAxes[italic][bold] = { fontAxisValues.data(), fontAxisValues.size() };
                     }
                 }
             }
         }
     }
     {
-        _r.typography.reset();
+        _p.d.font.typography.reset();
 
-        if (!_api.fontFeatures.empty())
+        if (!_p.s->font->fontFeatures.empty())
         {
-            _sr.dwriteFactory->CreateTypography(_r.typography.addressof());
-            for (const auto& v : _api.fontFeatures)
+            _p.dwriteFactory->CreateTypography(_p.d.font.typography.addressof());
+            for (const auto& v : _p.s->font->fontFeatures)
             {
-                THROW_IF_FAILED(_r.typography->AddFontFeature(v));
+                THROW_IF_FAILED(_p.d.font.typography->AddFontFeature(v));
             }
         }
     }
-
-    WI_ClearFlag(_api.invalidations, ApiInvalidations::Font);
-    WI_SetAllFlags(_r.invalidations, RenderInvalidations::Cursor | RenderInvalidations::ConstBuffer);
 }
 
 IDWriteTextFormat* AtlasEngine::_getTextFormat(bool bold, bool italic) const noexcept
 {
-    return _r.textFormats[italic][bold].get();
+    return _p.d.font.textFormats[italic][bold].get();
 }
 
-const AtlasEngine::Buffer<DWRITE_FONT_AXIS_VALUE>& AtlasEngine::_getTextFormatAxis(bool bold, bool italic) const noexcept
+const Buffer<DWRITE_FONT_AXIS_VALUE>& AtlasEngine::_getTextFormatAxis(bool bold, bool italic) const noexcept
 {
-    return _r.textFormatAxes[italic][bold];
+    return _p.d.font.textFormatAxes[italic][bold];
 }
 
-AtlasEngine::Cell* AtlasEngine::_getCell(u16 x, u16 y) noexcept
+Cell* AtlasEngine::_getCell(u16 x, u16 y) noexcept
 {
-    assert(x < _r.cellCount.x);
-    assert(y < _r.cellCount.y);
-    return _r.cells.data() + static_cast<size_t>(_r.cellCount.x) * y + x;
+    assert(x < _p.s->cellCount.x);
+    assert(y < _p.s->cellCount.y);
+    return _p.cells.data() + static_cast<size_t>(_p.s->cellCount.x) * y + x;
 }
 
-AtlasEngine::TileHashMap::iterator* AtlasEngine::_getCellGlyphMapping(u16 x, u16 y) noexcept
+TileHashMap::iterator* AtlasEngine::_getCellGlyphMapping(u16 x, u16 y) noexcept
 {
-    assert(x < _r.cellCount.x);
-    assert(y < _r.cellCount.y);
-    return _r.cellGlyphMapping.data() + static_cast<size_t>(_r.cellCount.x) * y + x;
+    assert(x < _p.s->cellCount.x);
+    assert(y < _p.s->cellCount.y);
+    return _p.cellGlyphMapping.data() + static_cast<size_t>(_p.s->cellCount.x) * y + x;
 }
 
 void AtlasEngine::_setCellFlags(u16r coords, CellFlags mask, CellFlags bits) noexcept
 {
     assert(coords.left <= coords.right);
     assert(coords.top <= coords.bottom);
-    assert(coords.right <= _r.cellCount.x);
-    assert(coords.bottom <= _r.cellCount.y);
+    assert(coords.right <= _p.s->cellCount.x);
+    assert(coords.bottom <= _p.s->cellCount.y);
 
     const auto filter = ~mask;
     const auto width = static_cast<size_t>(coords.right) - coords.left;
     const auto height = static_cast<size_t>(coords.bottom) - coords.top;
-    const auto stride = static_cast<size_t>(_r.cellCount.x);
-    auto row = _r.cells.data() + static_cast<size_t>(_r.cellCount.x) * coords.top + coords.left;
+    const auto stride = static_cast<size_t>(_p.s->cellCount.x);
+    auto row = _p.cells.data() + static_cast<size_t>(_p.s->cellCount.x) * coords.top + coords.left;
     const auto end = row + height * stride;
 
     for (; row != end; row += stride)
@@ -1175,6 +951,15 @@ void AtlasEngine::_flushBufferLine()
 
     // This would seriously blow us up otherwise.
     Expects(_api.bufferLineColumn.size() == _api.bufferLine.size() + 1);
+
+    // GH#13962: With the lack of proper LineRendition support, just fill
+    // the remaining columns with whitespace to prevent any weird artifacts.
+    for (auto lastColumn = _api.bufferLineColumn.back(); lastColumn < _api.s->cellCount.x;)
+    {
+        ++lastColumn;
+        _api.bufferLine.emplace_back(L' ');
+        _api.bufferLineColumn.emplace_back(lastColumn);
+    }
 
     // NOTE:
     // This entire function is one huge hack to see if it works.
@@ -1209,119 +994,94 @@ void AtlasEngine::_flushBufferLine()
     //
     // Font fallback with IDWriteFontFallback::MapCharacters is very slow.
 
-    const auto textFormat = _getTextFormat(_api.attributes.bold, _api.attributes.italic);
     const auto& textFormatAxis = _getTextFormatAxis(_api.attributes.bold, _api.attributes.italic);
 
     TextAnalysisSource analysisSource{ _api.bufferLine.data(), gsl::narrow<UINT32>(_api.bufferLine.size()) };
     TextAnalysisSink analysisSink{ _api.analysisResults };
-
-    wil::com_ptr<IDWriteFontCollection> fontCollection;
-    THROW_IF_FAILED(textFormat->GetFontCollection(fontCollection.addressof()));
 
     wil::com_ptr<IDWriteFontFace> mappedFontFace;
 
 #pragma warning(suppress : 26494) // Variable 'mappedEnd' is uninitialized. Always initialize an object (type.5).
     for (u32 idx = 0, mappedEnd; idx < _api.bufferLine.size(); idx = mappedEnd)
     {
-        if (_sr.systemFontFallback)
+        auto scale = 1.0f;
+        u32 mappedLength = 0;
+
+        if (textFormatAxis)
         {
-            auto scale = 1.0f;
-            u32 mappedLength = 0;
-
-            if (textFormatAxis)
-            {
-                wil::com_ptr<IDWriteFontFace5> fontFace5;
-                THROW_IF_FAILED(_sr.systemFontFallback.query<IDWriteFontFallback1>()->MapCharacters(
-                    /* analysisSource */ &analysisSource,
-                    /* textPosition */ idx,
-                    /* textLength */ gsl::narrow_cast<u32>(_api.bufferLine.size()) - idx,
-                    /* baseFontCollection */ fontCollection.get(),
-                    /* baseFamilyName */ _api.fontMetrics.fontName.c_str(),
-                    /* fontAxisValues */ textFormatAxis.data(),
-                    /* fontAxisValueCount */ gsl::narrow_cast<u32>(textFormatAxis.size()),
-                    /* mappedLength */ &mappedLength,
-                    /* scale */ &scale,
-                    /* mappedFontFace */ fontFace5.put()));
-                mappedFontFace = std::move(fontFace5);
-            }
-            else
-            {
-                const auto baseWeight = _api.attributes.bold ? DWRITE_FONT_WEIGHT_BOLD : static_cast<DWRITE_FONT_WEIGHT>(_api.fontMetrics.fontWeight);
-                const auto baseStyle = _api.attributes.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
-                wil::com_ptr<IDWriteFont> font;
-
-                THROW_IF_FAILED(_sr.systemFontFallback->MapCharacters(
-                    /* analysisSource     */ &analysisSource,
-                    /* textPosition       */ idx,
-                    /* textLength         */ gsl::narrow_cast<u32>(_api.bufferLine.size()) - idx,
-                    /* baseFontCollection */ fontCollection.get(),
-                    /* baseFamilyName     */ _api.fontMetrics.fontName.c_str(),
-                    /* baseWeight         */ baseWeight,
-                    /* baseStyle          */ baseStyle,
-                    /* baseStretch        */ DWRITE_FONT_STRETCH_NORMAL,
-                    /* mappedLength       */ &mappedLength,
-                    /* mappedFont         */ font.addressof(),
-                    /* scale              */ &scale));
-
-                mappedFontFace.reset();
-                if (font)
-                {
-                    THROW_IF_FAILED(font->CreateFontFace(mappedFontFace.addressof()));
-                }
-            }
-
-            mappedEnd = idx + mappedLength;
-
-            if (!mappedFontFace)
-            {
-                // Task: Replace all characters in this range with unicode replacement characters.
-                // Input (where "n" is a narrow and "ww" is a wide character):
-                //    _api.bufferLine       = "nwwnnw"
-                //    _api.bufferLineColumn = {0, 1, 1, 3, 4, 5, 5, 6}
-                //                             n  w  w  n  n  w  w
-                // Solution:
-                //   Iterate through bufferLineColumn until the value changes, because this indicates we passed over a
-                //   complete (narrow or wide) cell. To do so we'll use col1 (previous column) and col2 (next column).
-                //   Then we emit a replacement character by telling _emplaceGlyph that this range has no font face.
-                auto pos1 = idx;
-                auto col1 = _api.bufferLineColumn[pos1];
-                for (auto pos2 = idx + 1; pos2 <= mappedEnd; ++pos2)
-                {
-                    if (const auto col2 = _api.bufferLineColumn[pos2]; col1 != col2)
-                    {
-                        _emplaceGlyph(nullptr, pos1, pos2);
-                        pos1 = pos2;
-                        col1 = col2;
-                    }
-                }
-
-                continue;
-            }
+            wil::com_ptr<IDWriteFontFace5> fontFace5;
+            THROW_IF_FAILED(_p.systemFontFallback.query<IDWriteFontFallback1>()->MapCharacters(
+                /* analysisSource */ &analysisSource,
+                /* textPosition */ idx,
+                /* textLength */ gsl::narrow_cast<u32>(_api.bufferLine.size()) - idx,
+                /* baseFontCollection */ _p.s->font->fontCollection.get(),
+                /* baseFamilyName */ _p.s->font->fontName.c_str(),
+                /* fontAxisValues */ textFormatAxis.data(),
+                /* fontAxisValueCount */ gsl::narrow_cast<u32>(textFormatAxis.size()),
+                /* mappedLength */ &mappedLength,
+                /* scale */ &scale,
+                /* mappedFontFace */ fontFace5.put()));
+            mappedFontFace = std::move(fontFace5);
         }
         else
         {
-            if (!mappedFontFace)
+            const auto baseWeight = _api.attributes.bold ? DWRITE_FONT_WEIGHT_BOLD : static_cast<DWRITE_FONT_WEIGHT>(_p.s->font->fontWeight);
+            const auto baseStyle = _api.attributes.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
+            wil::com_ptr<IDWriteFont> font;
+
+            THROW_IF_FAILED(_p.systemFontFallback->MapCharacters(
+                /* analysisSource     */ &analysisSource,
+                /* textPosition       */ idx,
+                /* textLength         */ gsl::narrow_cast<u32>(_api.bufferLine.size()) - idx,
+                /* baseFontCollection */ _p.s->font->fontCollection.get(),
+                /* baseFamilyName     */ _p.s->font->fontName.c_str(),
+                /* baseWeight         */ baseWeight,
+                /* baseStyle          */ baseStyle,
+                /* baseStretch        */ DWRITE_FONT_STRETCH_NORMAL,
+                /* mappedLength       */ &mappedLength,
+                /* mappedFont         */ font.addressof(),
+                /* scale              */ &scale));
+
+            mappedFontFace.reset();
+            if (font)
             {
-                const auto baseWeight = _api.attributes.bold ? DWRITE_FONT_WEIGHT_BOLD : static_cast<DWRITE_FONT_WEIGHT>(_api.fontMetrics.fontWeight);
-                const auto baseStyle = _api.attributes.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
+                THROW_IF_FAILED(font->CreateFontFace(mappedFontFace.addressof()));
+            }
+        }
 
-                wil::com_ptr<IDWriteFontFamily> fontFamily;
-                THROW_IF_FAILED(fontCollection->GetFontFamily(0, fontFamily.addressof()));
+        mappedEnd = idx + mappedLength;
 
-                wil::com_ptr<IDWriteFont> font;
-                THROW_IF_FAILED(fontFamily->GetFirstMatchingFont(baseWeight, DWRITE_FONT_STRETCH_NORMAL, baseStyle, font.addressof()));
-
-                THROW_IF_FAILED(font->CreateFontFace(mappedFontFace.put()));
+        if (!mappedFontFace)
+        {
+            // Task: Replace all characters in this range with unicode replacement characters.
+            // Input (where "n" is a narrow and "ww" is a wide character):
+            //    _api.bufferLine       = "nwwnnw"
+            //    _api.bufferLineColumn = {0, 1, 1, 3, 4, 5, 5, 6}
+            //                             n  w  w  n  n  w  w
+            // Solution:
+            //   Iterate through bufferLineColumn until the value changes, because this indicates we passed over a
+            //   complete (narrow or wide) cell. To do so we'll use col1 (previous column) and col2 (next column).
+            //   Then we emit a replacement character by telling _emplaceGlyph that this range has no font face.
+            auto pos1 = idx;
+            auto col1 = _api.bufferLineColumn[pos1];
+            for (auto pos2 = idx + 1; pos2 <= mappedEnd; ++pos2)
+            {
+                if (const auto col2 = _api.bufferLineColumn[pos2]; col1 != col2)
+                {
+                    _emplaceGlyph(nullptr, pos1, pos2);
+                    pos1 = pos2;
+                    col1 = col2;
+                }
             }
 
-            mappedEnd = gsl::narrow_cast<u32>(_api.bufferLine.size());
+            continue;
         }
 
         // We can reuse idx here, as it'll be reset to "idx = mappedEnd" in the outer loop anyways.
         for (u32 complexityLength = 0; idx < mappedEnd; idx += complexityLength)
         {
             BOOL isTextSimple;
-            THROW_IF_FAILED(_sr.textAnalyzer->GetTextComplexity(_api.bufferLine.data() + idx, mappedEnd - idx, mappedFontFace.get(), &isTextSimple, &complexityLength, _api.glyphIndices.data()));
+            THROW_IF_FAILED(_p.textAnalyzer->GetTextComplexity(_api.bufferLine.data() + idx, mappedEnd - idx, mappedFontFace.get(), &isTextSimple, &complexityLength, _api.glyphIndices.data()));
 
             if (isTextSimple)
             {
@@ -1337,8 +1097,8 @@ void AtlasEngine::_flushBufferLine()
             else
             {
                 _api.analysisResults.clear();
-                THROW_IF_FAILED(_sr.textAnalyzer->AnalyzeScript(&analysisSource, idx, complexityLength, &analysisSink));
-                //_sr.textAnalyzer->AnalyzeBidi(&atlasAnalyzer, idx, complexityLength, &atlasAnalyzer);
+                THROW_IF_FAILED(_p.textAnalyzer->AnalyzeScript(&analysisSource, idx, complexityLength, &analysisSink));
+                //_p.textAnalyzer->AnalyzeBidi(&atlasAnalyzer, idx, complexityLength, &atlasAnalyzer);
 
                 for (const auto& a : _api.analysisResults)
                 {
@@ -1356,10 +1116,10 @@ void AtlasEngine::_flushBufferLine()
 #pragma warning(pop)
                     u32 featureRanges = 0;
 
-                    if (!_api.fontFeatures.empty())
+                    if (!_p.s->font->fontFeatures.empty())
                     {
-                        feature.features = _api.fontFeatures.data();
-                        feature.featureCount = gsl::narrow_cast<u32>(_api.fontFeatures.size());
+                        feature.features = const_cast<DWRITE_FONT_FEATURE*>(_p.s->font->fontFeatures.data());
+                        feature.featureCount = gsl::narrow_cast<u32>(_p.s->font->fontFeatures.size());
                         features = &feature;
                         featureRangeLengths = a.textLength;
                         featureRanges = 1;
@@ -1373,7 +1133,7 @@ void AtlasEngine::_flushBufferLine()
 
                     for (auto retry = 0;;)
                     {
-                        const auto hr = _sr.textAnalyzer->GetGlyphs(
+                        const auto hr = _p.textAnalyzer->GetGlyphs(
                             /* textString          */ _api.bufferLine.data() + a.textPosition,
                             /* textLength          */ a.textLength,
                             /* fontFace            */ mappedFontFace.get(),
@@ -1419,7 +1179,7 @@ void AtlasEngine::_flushBufferLine()
                         _api.glyphOffsets = Buffer<DWRITE_GLYPH_OFFSET>{ size };
                     }
 
-                    THROW_IF_FAILED(_sr.textAnalyzer->GetGlyphPlacements(
+                    THROW_IF_FAILED(_p.textAnalyzer->GetGlyphPlacements(
                         /* textString          */ _api.bufferLine.data() + a.textPosition,
                         /* clusterMap          */ _api.clusterMap.data(),
                         /* textProps           */ _api.textProps.data(),
@@ -1428,7 +1188,7 @@ void AtlasEngine::_flushBufferLine()
                         /* glyphProps          */ _api.glyphProps.data(),
                         /* glyphCount          */ actualGlyphCount,
                         /* fontFace            */ mappedFontFace.get(),
-                        /* fontEmSize          */ _api.fontMetrics.fontSizeInDIP,
+                        /* fontEmSize          */ _p.s->font->fontSizeInDIP,
                         /* isSideways          */ false,
                         /* isRightToLeft       */ a.bidiLevel & 1,
                         /* scriptAnalysis      */ &scriptAnalysis,
@@ -1486,7 +1246,7 @@ bool AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
     // I'm not entirely certain why this occurs, but to me, a layperson, it appears as if
     // IDWriteFontFallback::MapCharacters() doesn't respect extended grapheme clusters.
     // It could also possibly be due to a difference in the supported Unicode version.
-    if (x1 >= x2 || x2 > _api.cellCount.x)
+    if (x1 >= x2 || x2 > _api.s->cellCount.x)
     {
         return false;
     }
@@ -1499,9 +1259,9 @@ bool AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
     attributes.cellCount = cellCount;
 
     AtlasKey key{ attributes, gsl::narrow<u16>(charCount), chars };
-    auto it = _r.glyphs.find(key);
+    auto it = _p.glyphs.find(key);
 
-    if (it == _r.glyphs.end())
+    if (it == _p.glyphs.end())
     {
         // Do fonts exist *in practice* which contain both colored and uncolored glyphs? I'm pretty sure...
         // However doing it properly means using either of:
@@ -1537,11 +1297,11 @@ bool AtlasEngine::_emplaceGlyph(IDWriteFontFace* fontFace, size_t bufferPos1, si
 
         for (u16 i = 0; i < cellCount; ++i)
         {
-            coords[i] = _r.tileAllocator.allocate(_r.glyphs);
+            coords[i] = _p.tileAllocator.allocate(_p.glyphs);
         }
 
-        it = _r.glyphs.insert(std::move(key), std::move(value));
-        _r.glyphQueue.emplace_back(it);
+        it = _p.glyphs.insert(std::move(key), std::move(value));
+        _p.glyphQueue.emplace_back(it);
     }
 
     const auto valueData = it->second.data();

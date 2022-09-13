@@ -25,6 +25,7 @@
     <ClInclude Include="DWriteTextAnalysis.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="AtlasEngine.h" />
+    <ClInclude Include="helpers.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="custom_shader_ps.hlsl">

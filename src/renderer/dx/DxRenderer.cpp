@@ -614,6 +614,8 @@ try
         // requires DXGI 1.3 which was introduced in Windows 8.1
         WI_SetFlagIf(_swapChainDesc.Flags, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT, IsWindows8Point1OrGreater());
 
+        _swapChainDesc.Width = _displaySizePixels.narrow_width<UINT>();
+        _swapChainDesc.Height = _displaySizePixels.narrow_height<UINT>();
         _swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         _swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         _swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
@@ -626,13 +628,6 @@ try
         {
         case SwapChainMode::ForHwnd:
         {
-            // use the HWND's dimensions for the swap chain dimensions.
-            RECT rect{};
-            RETURN_IF_WIN32_BOOL_FALSE(GetClientRect(_hwndTarget, &rect));
-
-            _swapChainDesc.Width = rect.right - rect.left;
-            _swapChainDesc.Height = rect.bottom - rect.top;
-
             // We can't do alpha for HWNDs. Set to ignore. It will fail otherwise.
             _swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
             const auto createSwapChainResult = _dxgiFactory2->CreateSwapChainForHwnd(_d3dDevice.Get(),
@@ -662,10 +657,6 @@ try
             }
 
             RETURN_IF_FAILED(_dxgiFactory2.As(&_dxgiFactoryMedia));
-
-            // Use the given target size for compositions.
-            _swapChainDesc.Width = _displaySizePixels.narrow_width<UINT>();
-            _swapChainDesc.Height = _displaySizePixels.narrow_height<UINT>();
 
             // We're doing advanced composition pretty much for the purpose of pretty alpha, so turn it on.
             _swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
@@ -1201,22 +1192,7 @@ CATCH_RETURN();
 // - X by Y area in pixels of the surface
 [[nodiscard]] til::size DxEngine::_GetClientSize() const
 {
-    switch (_chainMode)
-    {
-    case SwapChainMode::ForHwnd:
-    {
-        RECT clientRect{};
-        LOG_IF_WIN32_BOOL_FALSE(GetClientRect(_hwndTarget, &clientRect));
-
-        return til::rect{ clientRect }.size();
-    }
-    case SwapChainMode::ForComposition:
-    {
-        return _sizeTarget;
-    }
-    default:
-        FAIL_FAST_HR(E_NOTIMPL);
-    }
+    return _sizeTarget;
 }
 
 // Routine Description:

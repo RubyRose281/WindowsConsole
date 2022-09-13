@@ -170,6 +170,11 @@ using namespace Microsoft::Console::Types;
         // minimized, and not only when they resize the window.
         Telemetry::Instance().SetWindowSizeChanged();
         goto CallDefWin;
+    }
+
+    case WM_SIZE:
+    {
+        g.pRender->SetWindowSize({ LOWORD(lParam), HIWORD(lParam) });
         break;
     }
 
@@ -466,7 +471,7 @@ using namespace Microsoft::Console::Types;
         {
             _HandleWindowPosChanged(lParam);
         }
-        break;
+        goto CallDefWin;
     }
 
     case WM_CONTEXTMENU:

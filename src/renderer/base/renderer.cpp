@@ -594,6 +594,14 @@ bool Renderer::s_IsSoftFontChar(const std::wstring_view& v, const size_t firstSo
     return E_FAIL;
 }
 
+void Renderer::SetWindowSize(const til::size pixels) noexcept
+{
+    FOREACH_ENGINE(pEngine)
+    {
+        LOG_IF_FAILED(pEngine->SetWindowSize(pixels));
+    }
+}
+
 // Routine Description:
 // - Tests against the current rendering engine to see if this particular character would be considered
 // full-width (inscribed in a square, twice as wide as a standard Western character, typically used for CJK

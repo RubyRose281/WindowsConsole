@@ -104,14 +104,14 @@ namespace Microsoft::Console::Render
         virtual void SetCallback(std::function<void(HANDLE)> pfn) noexcept {}
         virtual void EnableTransparentBackground(const bool isTransparent) noexcept {}
         virtual void SetForceFullRepaintRendering(bool enable) noexcept {}
-        virtual [[nodiscard]] HRESULT SetHwnd(const HWND hwnd) noexcept { return E_NOTIMPL; }
+        virtual [[nodiscard]] HRESULT SetHwnd(const HWND hwnd) noexcept { return S_OK; }
         virtual void SetPixelShaderPath(std::wstring_view value) noexcept {}
         virtual void SetRetroTerminalEffect(bool enable) noexcept {}
         virtual void SetSelectionBackground(const COLORREF color, const float alpha = 0.5f) noexcept {}
         virtual void SetSoftwareRendering(bool enable) noexcept {}
         virtual void SetWarningCallback(std::function<void(HRESULT)> pfn) noexcept {}
-        virtual [[nodiscard]] HRESULT SetWindowSize(const til::size pixels) noexcept { return E_NOTIMPL; }
-        virtual [[nodiscard]] HRESULT UpdateFont(const FontInfoDesired& pfiFontInfoDesired, FontInfo& fiFontInfo, const std::unordered_map<std::wstring_view, uint32_t>& features, const std::unordered_map<std::wstring_view, float>& axes) noexcept { return E_NOTIMPL; }
+        virtual [[nodiscard]] HRESULT SetWindowSize(const til::size pixels) noexcept { return S_OK; }
+        virtual [[nodiscard]] HRESULT UpdateFont(const FontInfoDesired& pfiFontInfoDesired, FontInfo& fiFontInfo, const std::unordered_map<std::wstring_view, uint32_t>& features, const std::unordered_map<std::wstring_view, float>& axes) noexcept { return S_OK; }
         virtual void UpdateHyperlinkHoveredId(const uint16_t hoveredId) noexcept {}
     };
 }

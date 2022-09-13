@@ -139,9 +139,11 @@ TARGETLIBS = \
     $(ONECORE_INTERNAL_PRIV_SDK_LIB_VPATH_L)\onecore_internal.lib \
     $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\propsys.lib \
     $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\d2d1.lib \
+    $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\d3d11.lib \
+    $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\d3dcompiler.lib \
+    $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\dcomp.lib \
     $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\dwrite.lib \
     $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\dxgi.lib \
-    $(ONECOREUAP_EXTERNAL_SDK_LIB_PATH)\d3d11.lib \
     $(MODERNCORE_INTERNAL_PRIV_SDK_LIB_VPATH_L)\api-ms-win-mm-playsound-l1.lib \
     $(ONECORE_INTERNAL_PRIV_SDK_LIB_VPATH_L)\ext-ms-win-dwmapi-ext-l1.lib \
     $(MINCORE_INTERNAL_PRIV_SDK_LIB_VPATH_L)\ext-ms-win-edputil-policy-l1.lib \
@@ -197,10 +199,12 @@ TARGETLIBS = \
     $(WINCORE_OBJ_PATH)\console\open\src\types\lib\$(O)\ConTypes.lib \
 
 DELAYLOAD = \
-    D2D1.dll; \
-    D3D11.dll; \
+    d2d1.dll; \
+    d3d11.dll; \
+    D3DCompiler_47.dll; \
+    dcomp.dll; \
     DWrite.dll; \
-    DXGI.dll; \
+    dxgi.dll; \
     OLEAUT32.dll; \
     PROPSYS.dll; \
     api-ms-win-core-com-l1.dll; \
