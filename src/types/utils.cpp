@@ -749,7 +749,7 @@ std::tuple<std::wstring, std::wstring> Utils::MangleStartingDirectoryForWSL(std:
                 std::wstring mangledDirectory{ startingDirectory };
                 if (til::starts_with(mangledDirectory, L"//wsl$") || til::starts_with(mangledDirectory, L"//wsl.localhost"))
                 {
-                    mangledDirectory = std::filesystem::path{ startingDirectory }.make_preferred().wstring();
+                    std::replace(mangledDirectory.begin(), mangledDirectory.end(), L'/', L'\\');
                 }
 
                 return {
