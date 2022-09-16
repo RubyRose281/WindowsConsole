@@ -79,7 +79,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         void ScrollViewport(int viewTop);
 
-        void AdjustFontSize(int fontSizeDelta);
+        void AdjustFontSize(float fontSizeDelta);
         void ResetFontSize();
         til::point GetFontSize() const;
 
