@@ -180,8 +180,6 @@ namespace Microsoft::Console::Render
         uint16_t _hyperlinkHoveredId;
 
         bool _firstFrame;
-        std::pmr::unsynchronized_pool_resource _pool;
-        til::pmr::bitmap _invalidMap;
         til::point _invalidScroll;
         bool _allInvalid;
 
@@ -266,7 +264,7 @@ namespace Microsoft::Console::Render
         bool _softwareRendering;
         bool _forceFullRepaintRendering;
 
-        D2D1_TEXT_ANTIALIAS_MODE _antialiasingMode;
+        const D2D1_TEXT_ANTIALIAS_MODE _antialiasingMode;
 
         bool _defaultBackgroundIsTransparent;
 

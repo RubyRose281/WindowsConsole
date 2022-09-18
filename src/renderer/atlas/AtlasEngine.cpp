@@ -852,7 +852,7 @@ void AtlasEngine::_createSwapChain()
         // If our background is opaque we can enable "independent" flips by setting DXGI_ALPHA_MODE_IGNORE.
         // As our swap chain won't have to compose with DWM anymore it reduces the display latency dramatically.
         desc.AlphaMode = _api.backgroundOpaqueMixin ? DXGI_ALPHA_MODE_IGNORE : DXGI_ALPHA_MODE_PREMULTIPLIED;
-        desc.Flags = debugGeneralPerformance ? 0 : DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+        desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
         wil::com_ptr<IDXGIFactory2> dxgiFactory;
         THROW_IF_FAILED(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.addressof())));
@@ -873,8 +873,7 @@ void AtlasEngine::_createSwapChain()
             THROW_IF_FAILED(DCompositionCreateSurfaceHandle(COMPOSITIONSURFACE_ALL_ACCESS, nullptr, _api.swapChainHandle.put()));
             THROW_IF_FAILED(dxgiFactory.query<IDXGIFactoryMedia>()->CreateSwapChainForCompositionSurfaceHandle(_r.device.get(), _api.swapChainHandle.get(), &desc, nullptr, _r.swapChain.put()));
         }
-
-        if constexpr (!debugGeneralPerformance)
+        
         {
             const auto swapChain2 = _r.swapChain.query<IDXGISwapChain2>();
             _r.frameLatencyWaitableObject.reset(swapChain2->GetFrameLatencyWaitableObject());
@@ -916,7 +915,7 @@ void AtlasEngine::_recreateSizeDependentResources()
         _r.renderTargetView.reset();
         _r.deviceContext->ClearState();
         _r.deviceContext->Flush();
-        THROW_IF_FAILED(_r.swapChain->ResizeBuffers(0, _api.sizeInPixel.x, _api.sizeInPixel.y, DXGI_FORMAT_UNKNOWN, debugGeneralPerformance ? 0 : DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT));
+        THROW_IF_FAILED(_r.swapChain->ResizeBuffers(0, _api.sizeInPixel.x, _api.sizeInPixel.y, DXGI_FORMAT_UNKNOWN, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT));
     }
 
     const auto totalCellCount = static_cast<size_t>(_api.cellCount.x) * static_cast<size_t>(_api.cellCount.y);

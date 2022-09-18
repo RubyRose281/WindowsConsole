@@ -410,6 +410,7 @@ namespace Microsoft::Console::Render
         struct FontMetrics
         {
             wil::com_ptr<IDWriteFontCollection> fontCollection;
+            wil::com_ptr<IDWriteFontFace> fontFace;
             std::wstring fontName;
             float baselineInDIP = 0.0f;
             float fontSizeInDIP = 0.0f;
@@ -952,10 +953,10 @@ namespace Microsoft::Console::Render
         void _d2dCellFlagRendererUnderlineDouble(u16r rect, u32 color);
         void _d2dCellFlagRendererStrikethrough(u16r rect, u32 color);
 
-        static constexpr bool debugForceD2DMode = false;
-        static constexpr bool debugGlyphGenerationPerformance = false;
+        static constexpr bool debugForceD2DMode = true;
+        static constexpr bool debugGlyphGenerationPerformance = true;
         static constexpr bool debugTextParsingPerformance = false || debugGlyphGenerationPerformance;
-        static constexpr bool debugGeneralPerformance = false || debugTextParsingPerformance;
+        static constexpr bool debugGeneralPerformance = true || debugTextParsingPerformance;
 
         static constexpr u16 u16min = 0x0000;
         static constexpr u16 u16max = 0xffff;
@@ -1010,6 +1011,8 @@ namespace Microsoft::Console::Render
             wil::com_ptr<ID3D11ShaderResourceView> atlasView;
             wil::com_ptr<ID2D1DeviceContext> d2dRenderTarget;
             wil::com_ptr<ID2D1SolidColorBrush> brush;
+            wil::com_ptr<ID2D1Bitmap> textBitmap;
+            wil::com_ptr<ID2D1BitmapBrush> textBrush;
             wil::com_ptr<IDWriteTextFormat> textFormats[2][2];
             Buffer<DWRITE_FONT_AXIS_VALUE> textFormatAxes[2][2];
             wil::com_ptr<IDWriteTypography> typography;

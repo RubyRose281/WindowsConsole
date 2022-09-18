@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 #include "pch.h"
+
+#include <numeric>
+
 #include "AtlasEngine.h"
 
 #include "dwrite.h"
@@ -79,7 +82,7 @@ try
     // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
     // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
     // > Note that this requirement includes the first frame the app renders with the swap chain.
-    assert(debugGeneralPerformance || _r.frameLatencyWaitableObjectUsed);
+    assert(_r.frameLatencyWaitableObjectUsed);
 
     if (_r.d2dMode) [[unlikely]]
     {
@@ -120,7 +123,7 @@ try
     // See documentation for IDXGISwapChain2::GetFrameLatencyWaitableObject method:
     // > For every frame it renders, the app should wait on this handle before starting any rendering operations.
     // > Note that this requirement includes the first frame the app renders with the swap chain.
-    assert(debugGeneralPerformance || _r.frameLatencyWaitableObjectUsed);
+    assert(_r.frameLatencyWaitableObjectUsed);
 
     if (_r.dirtyRect != fullRect)
     {
@@ -193,7 +196,7 @@ void AtlasEngine::WaitUntilCanRender() noexcept
     // IDXGISwapChain2::GetFrameLatencyWaitableObject returns an auto-reset event.
     // Once we've waited on the event, waiting on it again will block until the timeout elapses.
     // _r.waitForPresentation guards against this.
-    if (!debugGeneralPerformance && std::exchange(_r.waitForPresentation, false))
+    if (std::exchange(_r.waitForPresentation, false))
     {
         WaitForSingleObjectEx(_r.frameLatencyWaitableObject.get(), 100, true);
 #ifndef NDEBUG
@@ -847,6 +850,17 @@ void AtlasEngine::_d2dCreateRenderTarget()
         THROW_IF_FAILED(_r.d2dRenderTarget->CreateSolidColorBrush(&color, nullptr, _r.brush.put()));
         _r.brushColor = 0xffffffff;
     }
+    {
+        D2D1_BITMAP_PROPERTIES props{};
+        props.pixelFormat = { DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED };
+        props.dpiX = static_cast<float>(_r.dpi);
+        props.dpiY = static_cast<float>(_r.dpi);
+        THROW_IF_FAILED(_r.d2dRenderTarget->CreateBitmap({ _r.cellCount.x, _r.cellCount.y }, props, _r.textBitmap.put()));
+        THROW_IF_FAILED(_r.d2dRenderTarget->CreateBitmapBrush(_r.textBitmap.get(), _r.textBrush.put()));
+
+        _r.textBrush->SetInterpolationMode(D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+        _r.textBrush->SetTransform(D2D1::Matrix3x2F::Scale(_r.fontMetrics.cellSize.x, _r.fontMetrics.cellSize.y));
+    }
 }
 
 void AtlasEngine::_d2dDrawDirtyArea()
@@ -881,10 +895,23 @@ void AtlasEngine::_d2dDrawDirtyArea()
     }
 
     _r.d2dRenderTarget->BeginDraw();
+    _r.d2dRenderTarget->Clear(colorFromU32(_r.backgroundColor));
 
-    if (WI_IsFlagSet(_r.invalidations, RenderInvalidations::ConstBuffer))
     {
-        _r.d2dRenderTarget->Clear(colorFromU32(_r.backgroundColor));
+        Buffer<u32, 32> colors{ static_cast<size_t>(_r.cellCount.x * _r.cellCount.y * 4) };
+
+        auto it = colors.begin();
+
+        for (u16 y = 0; y < _r.cellCount.y; ++y)
+        {
+            for (u16 x = 0; x < _r.cellCount.x; ++x)
+            {
+                const auto argb = _getCell(x, y)->color.x;
+                *it++ = _byteswap_ulong((argb << 8) | (argb >> 24));
+            }
+        }
+
+        _r.textBitmap->CopyFromMemory(nullptr, colors.data(), _r.cellCount.x * 4);
     }
 
     for (u16 y = top; y < bottom; ++y)
@@ -922,42 +949,29 @@ void AtlasEngine::_d2dDrawDirtyArea()
             }
         }
 
-        // Draw background.
-        {
-            _r.d2dRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-
-            auto x1 = beg;
-            auto x2 = gsl::narrow_cast<u16>(x1 + 1);
-            auto currentColor = cells[x1].color.y;
-
-            for (; x2 < end; ++x2)
-            {
-                const auto color = cells[x2].color.y;
-
-                if (currentColor != color)
-                {
-                    const u16r rect{ x1, y, x2, gsl::narrow_cast<u16>(y + 1) };
-                    _d2dFillRectangle(rect, currentColor);
-                    x1 = x2;
-                    currentColor = color;
-                }
-            }
-
-            {
-                const u16r rect{ x1, y, x2, gsl::narrow_cast<u16>(y + 1) };
-                _d2dFillRectangle(rect, currentColor);
-            }
-
-            _r.d2dRenderTarget->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
-        }
-
         // Draw text.
-        for (auto x = beg; x < end;)
         {
-            const auto& it = cellGlyphMappings[x];
-            const u16x2 coord{ x, y };
-            const auto color = cells[x].color.x;
-            x += _d2dDrawGlyph(it, coord, color);
+            D2D1_POINT_2F baselineOrigin;
+            baselineOrigin.x = 0;
+            baselineOrigin.y = static_cast<float>(y) * _r.cellSizeDIP.y + _r.fontMetrics.baselineInDIP;
+            
+            std::array<UINT16, 120> glyphIndices;
+            std::array<FLOAT, 120> glyphAdvances;
+            //std::iota(glyphIndices.begin(), glyphIndices.end(), UINT16{100});
+            __stosw(glyphIndices.data(), 111, 120);
+            __stosd(reinterpret_cast<PDWORD>(glyphAdvances.data()), std::bit_cast<DWORD>(_r.cellSizeDIP.x), 120);
+
+            DWRITE_GLYPH_RUN glyphRun;
+            glyphRun.fontFace = _r.fontMetrics.fontFace.get();
+            glyphRun.fontEmSize = _r.fontMetrics.fontSizeInDIP;
+            glyphRun.glyphCount = _r.cellCount.x;
+            glyphRun.glyphIndices = &glyphIndices[0];
+            glyphRun.glyphAdvances = &glyphAdvances[0];
+            glyphRun.glyphOffsets = nullptr;
+            glyphRun.isSideways = FALSE;
+            glyphRun.bidiLevel = 0;
+
+            _r.d2dRenderTarget->DrawGlyphRun(baselineOrigin, &glyphRun, _r.textBrush.get(), DWRITE_MEASURING_MODE_NATURAL);
         }
 
         // Draw underlines, cursors, selections, etc.
@@ -1028,7 +1042,7 @@ AtlasEngine::u16 AtlasEngine::_d2dDrawGlyph(const TileHashMap::iterator& it, con
 
     origin.x += cachedLayout.offset.x;
     origin.y += cachedLayout.offset.y;
-    _r.d2dRenderTarget->DrawTextLayout(origin, cachedLayout.textLayout.get(), _brushWithColor(color), cachedLayout.options);
+    _r.d2dRenderTarget->DrawTextLayout(origin, cachedLayout.textLayout.get(), _r.textBrush.get(), cachedLayout.options);
 
     cachedLayout.undoScaling(_r.d2dRenderTarget.get());
 

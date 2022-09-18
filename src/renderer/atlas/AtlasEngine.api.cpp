@@ -697,8 +697,9 @@ void AtlasEngine::_resolveFontMetrics(const wchar_t* requestedFaceName, const Fo
 
         // NOTE: From this point onward no early returns or throwing code should exist,
         // as we might cause _api to be in an inconsistent state otherwise.
-
+        
         fontMetrics->fontCollection = std::move(fontCollection);
+        fontMetrics->fontFace = std::move(fontFace);
         fontMetrics->fontName = std::move(fontName);
         fontMetrics->fontSizeInDIP = fontSizeInDIP;
         fontMetrics->baselineInDIP = baseline / static_cast<float>(_api.dpi) * 96.0f;

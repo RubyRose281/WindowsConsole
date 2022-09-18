@@ -69,15 +69,13 @@ using namespace Microsoft::Console::Types;
 // TODO GH 2683: The default constructor should not throw.
 DxEngine::DxEngine() :
     RenderEngineBase(),
-    _pool{ til::pmr::get_default_resource() },
-    _invalidMap{ &_pool },
     _invalidScroll{},
     _allInvalid{ false },
     _firstFrame{ true },
     _presentParams{ 0 },
     _presentReady{ false },
     _presentScroll{ 0 },
-    _presentDirty{ 0 },
+    _presentDirty{ { 0, 0, 121, 31 } },
     _presentOffset{ 0 },
     _isEnabled{ false },
     _isPainting{ false },
@@ -97,7 +95,7 @@ DxEngine::DxEngine() :
     _pixelShaderPath{},
     _forceFullRepaintRendering{ false },
     _softwareRendering{ false },
-    _antialiasingMode{ D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE },
+    _antialiasingMode{ D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE },
     _defaultBackgroundIsTransparent{ true },
     _hwndTarget{ static_cast<HWND>(INVALID_HANDLE_VALUE) },
     _sizeTarget{},
@@ -923,18 +921,7 @@ void DxEngine::_ReleaseDeviceResources() noexcept
     // DANGER: Layers slow us down. Only do this in the specific case where
     // someone has chosen the slower ClearType antialiasing (versus the faster
     // grayscale antialiasing)
-    const auto usingCleartype = _antialiasingMode == D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE;
-    const auto usingTransparency = _defaultBackgroundIsTransparent;
-    // Another way of naming "bgIsDefault" is "bgHasTransparency"
-    const auto bgIsDefault = (_backgroundColor.a == _defaultBackgroundColor.a) &&
-                             (_backgroundColor.r == _defaultBackgroundColor.r) &&
-                             (_backgroundColor.g == _defaultBackgroundColor.g) &&
-                             (_backgroundColor.b == _defaultBackgroundColor.b);
-    const auto forceGrayscaleAA = usingCleartype &&
-                                  usingTransparency &&
-                                  bgIsDefault;
-
-    return forceGrayscaleAA;
+    return false;
 }
 
 // Routine Description:
@@ -1054,17 +1041,13 @@ try
 }
 CATCH_LOG()
 
-void DxEngine::_InvalidateRectangle(const til::rect& rc)
+void DxEngine::_InvalidateRectangle(const til::rect&)
 {
-    const auto size = _invalidMap.size();
-    const auto topLeft = til::point{ 0, std::clamp(rc.top, 0, size.height) };
-    const auto bottomRight = til::point{ size.width, std::clamp(rc.bottom, 0, size.height) };
-    _invalidMap.set({ topLeft, bottomRight });
 }
 
 bool DxEngine::_IsAllInvalid() const noexcept
 {
-    return std::abs(_invalidScroll.y) >= _invalidMap.size().height;
+    return true;
 }
 
 // Routine Description:
@@ -1158,7 +1141,6 @@ try
         if (deltaCells != til::point{})
         {
             // Shift the contents of the map and fill in revealed area.
-            _invalidMap.translate(deltaCells, true);
             _invalidScroll += deltaCells;
             _allInvalid = _IsAllInvalid();
         }
@@ -1177,7 +1159,6 @@ CATCH_RETURN();
 [[nodiscard]] HRESULT DxEngine::InvalidateAll() noexcept
 try
 {
-    _invalidMap.set_all();
     _allInvalid = true;
 
     // Since everything is invalidated here, mark this as a "first frame", so
@@ -1267,19 +1248,6 @@ try
         RETURN_IF_FAILED(InvalidateAll());
     }
 
-    if (TraceLoggingProviderEnabled(g_hDxRenderProvider, WINEVENT_LEVEL_VERBOSE, TIL_KEYWORD_TRACE))
-    {
-        const auto invalidatedStr = _invalidMap.to_string();
-        const auto invalidated = invalidatedStr.c_str();
-
-#pragma warning(suppress : 26477 26485 26494 26482 26446 26447) // We don't control TraceLoggingWrite
-        TraceLoggingWrite(g_hDxRenderProvider,
-                          "Invalid",
-                          TraceLoggingWideString(invalidated),
-                          TraceLoggingLevel(WINEVENT_LEVEL_VERBOSE),
-                          TraceLoggingKeyword(TIL_KEYWORD_TRACE));
-    }
-
     if (_isEnabled)
     {
         const auto clientSize = _GetClientSize();
@@ -1313,12 +1281,6 @@ try
 
             // And persist the new size.
             _displaySizePixels = clientSize;
-        }
-
-        if (const auto size = clientSize / glyphCellSize; size != _invalidMap.size())
-        {
-            _invalidMap.resize(size);
-            RETURN_IF_FAILED(InvalidateAll());
         }
 
         _d2dDeviceContext->BeginDraw();
@@ -1374,7 +1336,7 @@ try
             if (_invalidScroll != til::point{ 0, 0 })
             {
                 // Copy `til::rects` into RECT map.
-                _presentDirty.assign(_invalidMap.begin(), _invalidMap.end());
+                _presentDirty = { { 0, 0, 121, 31 } };
 
                 // Scale all dirty rectangles into pixels
                 std::transform(_presentDirty.begin(), _presentDirty.end(), _presentDirty.begin(), [&](const til::rect& rc) {
@@ -1385,7 +1347,7 @@ try
                 const auto scrollPixels = (_invalidScroll * _fontRenderData->GlyphCell());
 
                 // The scroll rect is the entire field of cells, but in pixels.
-                til::rect scrollArea{ _invalidMap.size() * _fontRenderData->GlyphCell() };
+                til::rect scrollArea{ til::size{ 120, 30 } * _fontRenderData->GlyphCell() };
 
                 // Reduce the size of the rectangle by the scroll.
                 scrollArea.left = std::clamp(scrollArea.left + scrollPixels.x, scrollArea.left, scrollArea.right);
@@ -1429,7 +1391,6 @@ try
         }
     }
 
-    _invalidMap.reset_all();
     _allInvalid = false;
 
     _invalidScroll = {};
@@ -1588,7 +1549,7 @@ void DxEngine::WaitUntilCanRender() noexcept
 
             _presentReady = false;
 
-            _presentDirty.clear();
+            _presentDirty = { { 0, 0, 121, 31 } };
             _presentOffset = { 0 };
             _presentScroll = { 0 };
             _presentParams = { 0 };
@@ -1627,29 +1588,7 @@ try
     }
 
     // If the entire thing is invalid, just use one big clear operation.
-    if (_invalidMap.all())
-    {
-        _d2dDeviceContext->Clear(nothing);
-    }
-    else
-    {
-        // Runs are counts of cells.
-        // Use a transform by the size of one cell to convert cells-to-pixels
-        // as we clear.
-        _d2dDeviceContext->SetTransform(D2D1::Matrix3x2F::Scale(_fontRenderData->GlyphCell().to_d2d_size()));
-        for (const auto& rect : _invalidMap.runs())
-        {
-            // Use aliased.
-            // For graphics reasons, it'll look better because it will ensure that
-            // the edges are cut nice and sharp (not blended by anti-aliasing).
-            // For performance reasons, it takes a lot less work to not
-            // do anti-alias blending.
-            _d2dDeviceContext->PushAxisAlignedClip(rect.to_d2d_rect(), D2D1_ANTIALIAS_MODE_ALIASED);
-            _d2dDeviceContext->Clear(nothing);
-            _d2dDeviceContext->PopAxisAlignedClip();
-        }
-        _d2dDeviceContext->SetTransform(D2D1::Matrix3x2F::Identity());
-    }
+    _d2dDeviceContext->Clear(nothing);
 
     return S_OK;
 }
@@ -2115,7 +2054,7 @@ CATCH_RETURN();
 [[nodiscard]] HRESULT DxEngine::GetDirtyArea(gsl::span<const til::rect>& area) noexcept
 try
 {
-    area = _invalidMap.runs();
+    area = _presentDirty;
     return S_OK;
 }
 CATCH_RETURN();
@@ -2233,9 +2172,8 @@ try
 {
     if (_antialiasingMode != antialiasingMode)
     {
-        _antialiasingMode = antialiasingMode;
         _recreateDeviceRequested = true;
-        LOG_IF_FAILED(_softFont.SetAntialiasing(antialiasingMode != D2D1_TEXT_ANTIALIAS_MODE_ALIASED));
+        LOG_IF_FAILED(_softFont.SetAntialiasing(_antialiasingMode != D2D1_TEXT_ANTIALIAS_MODE_ALIASED));
         LOG_IF_FAILED(InvalidateAll());
     }
 }
