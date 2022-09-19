@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #include "pch.h"
@@ -7,6 +7,7 @@
 #include "EnumEntry.h"
 
 #include <LibraryResources.h>
+#include "..\WinRTUtils\inc\Utils.h"
 
 using namespace winrt::Windows::UI::Text;
 using namespace winrt::Windows::UI::Xaml;
@@ -91,6 +92,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         InitializeComponent();
 
         INITIALIZE_BINDABLE_ENUM_SETTING(CursorShape, CursorStyle, winrt::Microsoft::Terminal::Core::CursorStyle, L"Profile_CursorShape", L"Content");
+        INITIALIZE_BINDABLE_ENUM_SETTING(AdjustIndistinguishableColors, AdjustIndistinguishableColors, winrt::Microsoft::Terminal::Core::AdjustTextMode, L"Profile_AdjustIndistinguishableColors", L"Content");
         INITIALIZE_BINDABLE_ENUM_SETTING_REVERSE_ORDER(BackgroundImageStretchMode, BackgroundImageStretchMode, winrt::Windows::UI::Xaml::Media::Stretch, L"Profile_BackgroundImageStretchMode", L"Content");
 
         // manually add Custom FontWeight option. Don't add it to the Map
@@ -135,13 +137,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         INITIALIZE_BINDABLE_ENUM_SETTING(IntenseTextStyle, IntenseTextStyle, winrt::Microsoft::Terminal::Settings::Model::IntenseStyle, L"Appearance_IntenseTextStyle", L"Content");
     }
 
+    bool Appearances::ShowIndistinguishableColorsItem() const noexcept
+    {
+        return Feature_AdjustIndistinguishableText::IsEnabled();
+    }
+
     // Method Description:
     // - Searches through our list of monospace fonts to determine if the settings model's current font face is a monospace font
     bool Appearances::UsingMonospaceFont() const noexcept
     {
-        bool result{ false };
+        auto result{ false };
         const auto currentFont{ Appearance().FontFace() };
-        for (const auto& font : SourceProfile().MonospaceFontList())
+        for (const auto& font : ProfileViewModel::MonospaceFontList())
         {
             if (font.LocalizedName() == currentFont)
             {
@@ -174,7 +181,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // look for the current font in our shown list of fonts
         const auto& appearanceVM{ Appearance() };
         const auto appearanceFontFace{ appearanceVM.FontFace() };
-        const auto& currentFontList{ ShowAllFonts() ? SourceProfile().CompleteFontList() : SourceProfile().MonospaceFontList() };
+        const auto& currentFontList{ ShowAllFonts() ? ProfileViewModel::CompleteFontList() : ProfileViewModel::MonospaceFontList() };
         IInspectable fallbackFont;
         for (const auto& font : currentFontList)
         {
@@ -192,7 +199,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         return fallbackFont;
     }
 
-    void Appearances::FontFace_SelectionChanged(IInspectable const& /*sender*/, SelectionChangedEventArgs const& e)
+    void Appearances::FontFace_SelectionChanged(const IInspectable& /*sender*/, const SelectionChangedEventArgs& e)
     {
         // NOTE: We need to hook up a selection changed event handler here instead of directly binding to the appearance view model.
         //       A two way binding to the view model causes an infinite loop because both combo boxes keep fighting over which one's right.
@@ -201,7 +208,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Appearance().FontFace(newFontFace.LocalizedName());
     }
 
-    void Appearances::_ViewModelChanged(DependencyObject const& d, DependencyPropertyChangedEventArgs const& /*args*/)
+    void Appearances::_ViewModelChanged(const DependencyObject& d, const DependencyPropertyChangedEventArgs& /*args*/)
     {
         const auto& obj{ d.as<Editor::Appearances>() };
         get_self<Appearances>(obj)->_UpdateWithNewViewModel();
@@ -262,6 +269,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 {
                     _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"CurrentIntenseTextStyle" });
                 }
+                else if (settingName == L"AdjustIndistinguishableColors")
+                {
+                    _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"CurrentAdjustIndistinguishableColors" });
+                }
                 // YOU THERE ADDING A NEW APPEARANCE SETTING
                 // Make sure you add a block like
                 //
@@ -292,10 +303,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"ShowAllFonts" });
             _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"UsingMonospaceFont" });
             _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"CurrentIntenseTextStyle" });
+            _PropertyChangedHandlers(*this, PropertyChangedEventArgs{ L"CurrentAdjustIndistinguishableColors" });
         }
     }
 
-    fire_and_forget Appearances::BackgroundImage_Click(IInspectable const&, RoutedEventArgs const&)
+    fire_and_forget Appearances::BackgroundImage_Click(const IInspectable&, const RoutedEventArgs&)
     {
         auto lifetime = get_strong();
 
@@ -307,7 +319,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
-    void Appearances::BIAlignment_Click(IInspectable const& sender, RoutedEventArgs const& /*e*/)
+    void Appearances::BIAlignment_Click(const IInspectable& sender, const RoutedEventArgs& /*e*/)
     {
         if (const auto& button{ sender.try_as<Primitives::ToggleButton>() })
         {

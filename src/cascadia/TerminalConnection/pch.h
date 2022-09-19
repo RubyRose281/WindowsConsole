@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
 // pch.h
@@ -33,3 +33,5 @@ TRACELOGGING_DECLARE_PROVIDER(g_hTerminalConnectionProvider);
 #include <telemetry/ProjectTelemetry.h>
 
 #include "til.h"
+
+#include <cppwinrt_utils.h>
