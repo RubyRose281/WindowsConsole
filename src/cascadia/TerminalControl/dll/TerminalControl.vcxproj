@@ -111,7 +111,7 @@
   <!--LATE LATE LATE-->
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>onecoreuap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>uiautomationcore.lib;oleaut32.lib;onecoreuap.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 </Project>
