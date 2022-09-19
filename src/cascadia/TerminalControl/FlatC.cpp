@@ -120,13 +120,12 @@ struct TerminalSettings : winrt::implements<TerminalSettings, IControlSettings, 
     WINRT_PROPERTY(bool, DetectURLs, true);
     WINRT_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, TabColor, nullptr);
     WINRT_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, StartingTabColor, nullptr);
-    WINRT_PROPERTY(bool, IntenseIsBright);
     WINRT_PROPERTY(winrt::hstring, ProfileName);
     WINRT_PROPERTY(bool, UseAcrylic, false);
-    WINRT_PROPERTY(double, TintOpacity, 0.5);
+    WINRT_PROPERTY(double, Opacity, 1.0);
     WINRT_PROPERTY(winrt::hstring, Padding, DEFAULT_PADDING);
-    WINRT_PROPERTY(winrt::hstring, FontFace, DEFAULT_FONT_FACE);
-    WINRT_PROPERTY(int32_t, FontSize, DEFAULT_FONT_SIZE);
+    WINRT_PROPERTY(winrt::hstring, FontFace, L"Cascadia Code");
+    WINRT_PROPERTY(float, FontSize, DEFAULT_FONT_SIZE);
     WINRT_PROPERTY(winrt::Windows::UI::Text::FontWeight, FontWeight, winrt::Windows::UI::Text::FontWeight{ 400 });
     WINRT_PROPERTY(IFontAxesMap, FontAxes);
     WINRT_PROPERTY(IFontFeatureMap, FontFeatures);
@@ -148,7 +147,15 @@ struct TerminalSettings : winrt::implements<TerminalSettings, IControlSettings, 
     WINRT_PROPERTY(bool, SoftwareRendering, false);
     WINRT_PROPERTY(bool, ForceVTInput, false);
     WINRT_PROPERTY(winrt::hstring, PixelShaderPath);
+    WINRT_PROPERTY(bool, IntenseIsBright);
     WINRT_PROPERTY(bool, IntenseIsBold);
+    WINRT_PROPERTY(bool, ShowMarks);
+    WINRT_PROPERTY(bool, UseBackgroundImageForWindow);
+    WINRT_PROPERTY(bool, AutoMarkPrompts);
+    WINRT_PROPERTY(bool, VtPassthrough);
+    WINRT_PROPERTY(winrt::hstring, ProfileSource, L"this property was a mistake");
+    WINRT_PROPERTY(bool, UseAtlasEngine, true);
+    WINRT_PROPERTY(AdjustTextMode, AdjustIndistinguishableColors, AdjustTextMode::Never);
 
 private:
     std::array<winrt::Microsoft::Terminal::Core::Color, 16> _ColorTable;
@@ -244,12 +251,12 @@ struct HwndTerminal
         case WM_LBUTTONUP:
         case WM_MBUTTONUP:
         case WM_RBUTTONUP:
-            ReleaseCapture();
             _interactivity.PointerReleased(
                 MouseButtonStateFromWParam(wParam),
                 uMsg,
                 getControlKeyState(),
                 PointFromLParam(lParam));
+            ReleaseCapture();
             return 0;
         case WM_MOUSEWHEEL:
             if (_interactivity.MouseWheel(getControlKeyState(), GET_WHEEL_DELTA_WPARAM(wParam), PointFromLParam(lParam), MouseButtonStateFromWParam(wParam)))
@@ -264,6 +271,7 @@ struct HwndTerminal
             _interactivity.LostFocus();
             break;
         }
+
         return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
 
@@ -294,7 +302,7 @@ struct HwndTerminal
         }
 
         _connection = winrt::make_self<NullConnection>();
-        _interactivity = ControlInteractivity{ winrt::make<TerminalSettings>(), *_connection };
+        _interactivity = ControlInteractivity{ winrt::make<TerminalSettings>(), nullptr, *_connection };
         _core = _interactivity.Core();
     }
 
@@ -312,7 +320,7 @@ struct HwndTerminal
     bool _initialized{ false };
 
     HRESULT RegisterScrollCallback(PSCROLLCB callback) { return S_OK; }
-    HRESULT TriggerResize(_In_ short width, _In_ short height, _Out_ COORD* dimensions)
+    HRESULT TriggerResize(_In_ til::CoordType width, _In_ til::CoordType height, _Out_ til::size* dimensions)
     {
         if (!_initialized)
             return S_FALSE;
@@ -320,8 +328,8 @@ struct HwndTerminal
         _core.SizeChanged(width, height);
         return S_OK;
     }
-    HRESULT TriggerResizeWithDimension(_In_ COORD dimensions, _Out_ SIZE* dimensionsInPixels) { return S_OK; }
-    HRESULT CalculateResize(_In_ short width, _In_ short height, _Out_ COORD* dimensions) { return S_OK; }
+    HRESULT TriggerResizeWithDimension(_In_ til::size dimensions, _Out_ SIZE* dimensionsInPixels) { return S_OK; }
+    HRESULT CalculateResize(_In_ til::CoordType width, _In_ til::CoordType height, _Out_ til::size* dimensions) { return S_OK; }
     HRESULT DpiChanged(int newDpi)
     {
         _core.ScaleChanged((double)newDpi / 96.0);
@@ -330,8 +338,8 @@ struct HwndTerminal
     HRESULT UserScroll(int viewTop) { return S_OK; }
     HRESULT ClearSelection() { return S_OK; }
     HRESULT GetSelection(const wchar_t** out) { return S_OK; }
-    HRESULT IsSelectionActive(bool* out) { return S_OK; }
-    HRESULT SetTheme(TerminalTheme theme, LPCWSTR fontFamily, short fontSize, int newDpi) { return S_OK; }
+    HRESULT IsSelectionActive(bool* out) { return _core.HasSelection(); }
+    HRESULT SetTheme(TerminalTheme theme, LPCWSTR fontFamily, til::CoordType fontSize, int newDpi) { return S_OK; }
     HRESULT RegisterWriteCallback(PWRITECB callback)
     {
         _connection->_pfnWriteCallback = callback;
@@ -426,4 +434,6 @@ TERMINAL_API_TABLE(GENERATOR)
 #undef GENERATOR_3
 #undef GENERATOR_4
 #undef GENERATOR_N
+#undef GENERATOR
+
 #undef API_NAME
