@@ -5,9 +5,17 @@
 #include "../TerminalCore/ControlKeyStates.hpp"
 #include "../types/inc/colorTable.hpp"
 #include "../inc/DefaultSettings.h"
+#include "../inc/cppwinrt_utils.h"
 #include <windowsx.h>
 
 #pragma warning(disable : 4100)
+
+#define HARDCODED_PROPERTY(type, name, ...) \
+    type name() const                       \
+    {                                       \
+        return type{ __VA_ARGS__ };         \
+    }                                       \
+    void name(const type&) {}
 
 using namespace winrt::Microsoft::Terminal::Control;
 using namespace winrt::Microsoft::Terminal::Core;
@@ -45,21 +53,19 @@ static CKS getControlKeyState() noexcept
     return flags;
 }
 
-static LPCWSTR term_window_class = L"HwndTerminalClass";
-
-// This magic flag is "documented" at https://msdn.microsoft.com/en-us/library/windows/desktop/ms646301(v=vs.85).aspx
-// "If the high-order bit is 1, the key is down; otherwise, it is up."
-static constexpr short KeyPressed{ gsl::narrow_cast<short>(0x8000) };
-
-static constexpr bool _IsMouseMessage(UINT uMsg)
+static MouseButtonState MouseButtonStateFromWParam(WPARAM wParam)
 {
-    return uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_LBUTTONDBLCLK ||
-           uMsg == WM_MBUTTONDOWN || uMsg == WM_MBUTTONUP || uMsg == WM_MBUTTONDBLCLK ||
-           uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONUP || uMsg == WM_RBUTTONDBLCLK ||
-           uMsg == WM_MOUSEMOVE || uMsg == WM_MOUSEWHEEL || uMsg == WM_MOUSEHWHEEL;
+    MouseButtonState state{};
+    WI_UpdateFlag(state, MouseButtonState::IsLeftButtonDown, WI_IsFlagSet(wParam, MK_LBUTTON));
+    WI_UpdateFlag(state, MouseButtonState::IsMiddleButtonDown, WI_IsFlagSet(wParam, MK_MBUTTON));
+    WI_UpdateFlag(state, MouseButtonState::IsRightButtonDown, WI_IsFlagSet(wParam, MK_RBUTTON));
+    return state;
 }
 
-#include "../inc/cppwinrt_utils.h"
+static Point PointFromLParam(LPARAM lParam)
+{
+    return { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+}
 
 struct NullConnection : public winrt::implements<NullConnection, winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection>
 {
@@ -86,83 +92,124 @@ public:
         _TerminalOutputHandlers(winrt::to_hstring(data));
     }
 };
-struct TerminalSettings : winrt::implements<TerminalSettings, IControlSettings, ICoreSettings, IControlAppearance, ICoreAppearance>
+
+struct ThemeBasedTerminalSettings : winrt::implements<ThemeBasedTerminalSettings, IControlSettings, ICoreSettings, IControlAppearance, ICoreAppearance>
 {
     using IFontAxesMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, float>;
     using IFontFeatureMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, uint32_t>;
-    TerminalSettings()
+    ThemeBasedTerminalSettings()
     {
         const auto campbellSpan = Microsoft::Console::Utils::CampbellColorTable();
-        std::transform(campbellSpan.begin(), campbellSpan.end(), _ColorTable.begin(), [](auto&& color) {
-            return static_cast<winrt::Microsoft::Terminal::Core::Color>(til::color{ color });
+        std::transform(campbellSpan.begin(), campbellSpan.end(), std::begin(_theme.ColorTable), [](auto&& color) {
+            return color;
         });
     }
-    ~TerminalSettings() = default;
+    ~ThemeBasedTerminalSettings() = default;
 
-    winrt::Microsoft::Terminal::Core::Color GetColorTableEntry(int32_t index) noexcept { return _ColorTable.at(index); }
+    winrt::Microsoft::Terminal::Core::Color GetColorTableEntry(int32_t index) noexcept
+    {
+        return til::color{ til::at(_theme.ColorTable, index) };
+    }
 
-    WINRT_PROPERTY(til::color, DefaultForeground, DEFAULT_FOREGROUND);
-    WINRT_PROPERTY(til::color, DefaultBackground, DEFAULT_BACKGROUND);
-    WINRT_PROPERTY(til::color, SelectionBackground, DEFAULT_FOREGROUND);
-    WINRT_PROPERTY(int32_t, HistorySize, DEFAULT_HISTORY_SIZE);
-    WINRT_PROPERTY(int32_t, InitialRows, 30);
-    WINRT_PROPERTY(int32_t, InitialCols, 80);
-    WINRT_PROPERTY(bool, SnapOnInput, true);
-    WINRT_PROPERTY(bool, AltGrAliasing, true);
-    WINRT_PROPERTY(til::color, CursorColor, DEFAULT_CURSOR_COLOR);
-    WINRT_PROPERTY(winrt::Microsoft::Terminal::Core::CursorStyle, CursorShape, winrt::Microsoft::Terminal::Core::CursorStyle::Vintage);
-    WINRT_PROPERTY(uint32_t, CursorHeight, DEFAULT_CURSOR_HEIGHT);
-    WINRT_PROPERTY(winrt::hstring, WordDelimiters, DEFAULT_WORD_DELIMITERS);
-    WINRT_PROPERTY(bool, CopyOnSelect, false);
-    WINRT_PROPERTY(bool, InputServiceWarning, true);
-    WINRT_PROPERTY(bool, FocusFollowMouse, false);
-    WINRT_PROPERTY(bool, TrimBlockSelection, false);
-    WINRT_PROPERTY(bool, DetectURLs, true);
-    WINRT_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, TabColor, nullptr);
-    WINRT_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, StartingTabColor, nullptr);
-    WINRT_PROPERTY(winrt::hstring, ProfileName);
-    WINRT_PROPERTY(bool, UseAcrylic, false);
-    WINRT_PROPERTY(double, Opacity, 1.0);
-    WINRT_PROPERTY(winrt::hstring, Padding, DEFAULT_PADDING);
-    WINRT_PROPERTY(winrt::hstring, FontFace, L"Cascadia Code");
-    WINRT_PROPERTY(float, FontSize, DEFAULT_FONT_SIZE);
-    WINRT_PROPERTY(winrt::Windows::UI::Text::FontWeight, FontWeight, winrt::Windows::UI::Text::FontWeight{ 400 });
-    WINRT_PROPERTY(IFontAxesMap, FontAxes);
-    WINRT_PROPERTY(IFontFeatureMap, FontFeatures);
-    WINRT_PROPERTY(winrt::hstring, BackgroundImage);
-    WINRT_PROPERTY(double, BackgroundImageOpacity, 1.0);
-    WINRT_PROPERTY(winrt::Windows::UI::Xaml::Media::Stretch, BackgroundImageStretchMode, winrt::Windows::UI::Xaml::Media::Stretch::UniformToFill);
-    WINRT_PROPERTY(winrt::Windows::UI::Xaml::HorizontalAlignment, BackgroundImageHorizontalAlignment, winrt::Windows::UI::Xaml::HorizontalAlignment::Center);
-    WINRT_PROPERTY(winrt::Windows::UI::Xaml::VerticalAlignment, BackgroundImageVerticalAlignment, winrt::Windows::UI::Xaml::VerticalAlignment::Center);
-    WINRT_PROPERTY(winrt::Microsoft::Terminal::Control::IKeyBindings, KeyBindings, nullptr);
-    WINRT_PROPERTY(winrt::hstring, Commandline);
-    WINRT_PROPERTY(winrt::hstring, StartingDirectory);
-    WINRT_PROPERTY(winrt::hstring, StartingTitle);
-    WINRT_PROPERTY(bool, SuppressApplicationTitle);
-    WINRT_PROPERTY(winrt::hstring, EnvironmentVariables);
-    WINRT_PROPERTY(winrt::Microsoft::Terminal::Control::ScrollbarState, ScrollState, winrt::Microsoft::Terminal::Control::ScrollbarState::Visible);
-    WINRT_PROPERTY(winrt::Microsoft::Terminal::Control::TextAntialiasingMode, AntialiasingMode, winrt::Microsoft::Terminal::Control::TextAntialiasingMode::Grayscale);
-    WINRT_PROPERTY(bool, RetroTerminalEffect, false);
-    WINRT_PROPERTY(bool, ForceFullRepaintRendering, false);
-    WINRT_PROPERTY(bool, SoftwareRendering, false);
-    WINRT_PROPERTY(bool, ForceVTInput, false);
-    WINRT_PROPERTY(winrt::hstring, PixelShaderPath);
-    WINRT_PROPERTY(bool, IntenseIsBright);
-    WINRT_PROPERTY(bool, IntenseIsBold);
-    WINRT_PROPERTY(bool, ShowMarks);
-    WINRT_PROPERTY(bool, UseBackgroundImageForWindow);
-    WINRT_PROPERTY(bool, AutoMarkPrompts);
-    WINRT_PROPERTY(bool, VtPassthrough);
-    WINRT_PROPERTY(winrt::hstring, ProfileSource, L"this property was a mistake");
-    WINRT_PROPERTY(bool, UseAtlasEngine, true);
-    WINRT_PROPERTY(AdjustTextMode, AdjustIndistinguishableColors, AdjustTextMode::Never);
+    til::color DefaultForeground() const
+    {
+        return _theme.DefaultForeground;
+    }
+    til::color DefaultBackground() const
+    {
+        return _theme.DefaultBackground;
+    }
+    til::color SelectionBackground() const
+    {
+        return til::color{ _theme.DefaultSelectionBackground }.with_alpha(static_cast<uint8_t>(255.0 * _theme.SelectionBackgroundAlpha));
+    }
+    winrt::hstring FontFace() const
+    {
+        return _fontFace;
+    }
+    float FontSize() const
+    {
+        return _fontSize;
+    }
+    winrt::Microsoft::Terminal::Core::CursorStyle CursorShape() const
+    {
+        return static_cast<winrt::Microsoft::Terminal::Core::CursorStyle>(_theme.CursorStyle);
+    }
+    void DefaultForeground(const til::color&) {}
+    void DefaultBackground(const til::color&) {}
+    void SelectionBackground(const til::color&) {}
+    void FontFace(const winrt::hstring&) {}
+    void FontSize(const float&) {}
+    void CursorShape(const winrt::Microsoft::Terminal::Core::CursorStyle&) {}
+
+    HARDCODED_PROPERTY(int32_t, HistorySize, DEFAULT_HISTORY_SIZE);
+    HARDCODED_PROPERTY(int32_t, InitialRows, 30);
+    HARDCODED_PROPERTY(int32_t, InitialCols, 80);
+    HARDCODED_PROPERTY(bool, SnapOnInput, true);
+    HARDCODED_PROPERTY(bool, AltGrAliasing, true);
+    HARDCODED_PROPERTY(til::color, CursorColor, DEFAULT_CURSOR_COLOR);
+    HARDCODED_PROPERTY(uint32_t, CursorHeight, DEFAULT_CURSOR_HEIGHT);
+    HARDCODED_PROPERTY(winrt::hstring, WordDelimiters, DEFAULT_WORD_DELIMITERS);
+    HARDCODED_PROPERTY(bool, CopyOnSelect, false);
+    HARDCODED_PROPERTY(bool, InputServiceWarning, true);
+    HARDCODED_PROPERTY(bool, FocusFollowMouse, false);
+    HARDCODED_PROPERTY(bool, TrimBlockSelection, false);
+    HARDCODED_PROPERTY(bool, DetectURLs, true);
+    HARDCODED_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, TabColor, nullptr);
+    HARDCODED_PROPERTY(winrt::Windows::Foundation::IReference<winrt::Microsoft::Terminal::Core::Color>, StartingTabColor, nullptr);
+    HARDCODED_PROPERTY(winrt::hstring, ProfileName);
+    HARDCODED_PROPERTY(bool, UseAcrylic, false);
+    HARDCODED_PROPERTY(double, Opacity, 1.0);
+    HARDCODED_PROPERTY(winrt::hstring, Padding, DEFAULT_PADDING);
+    HARDCODED_PROPERTY(winrt::Windows::UI::Text::FontWeight, FontWeight, winrt::Windows::UI::Text::FontWeight{ 400 });
+    HARDCODED_PROPERTY(IFontAxesMap, FontAxes);
+    HARDCODED_PROPERTY(IFontFeatureMap, FontFeatures);
+    HARDCODED_PROPERTY(winrt::hstring, BackgroundImage);
+    HARDCODED_PROPERTY(double, BackgroundImageOpacity, 1.0);
+    HARDCODED_PROPERTY(winrt::Windows::UI::Xaml::Media::Stretch, BackgroundImageStretchMode, winrt::Windows::UI::Xaml::Media::Stretch::UniformToFill);
+    HARDCODED_PROPERTY(winrt::Windows::UI::Xaml::HorizontalAlignment, BackgroundImageHorizontalAlignment, winrt::Windows::UI::Xaml::HorizontalAlignment::Center);
+    HARDCODED_PROPERTY(winrt::Windows::UI::Xaml::VerticalAlignment, BackgroundImageVerticalAlignment, winrt::Windows::UI::Xaml::VerticalAlignment::Center);
+    HARDCODED_PROPERTY(winrt::Microsoft::Terminal::Control::IKeyBindings, KeyBindings, nullptr);
+    HARDCODED_PROPERTY(winrt::hstring, Commandline);
+    HARDCODED_PROPERTY(winrt::hstring, StartingDirectory);
+    HARDCODED_PROPERTY(winrt::hstring, StartingTitle);
+    HARDCODED_PROPERTY(bool, SuppressApplicationTitle);
+    HARDCODED_PROPERTY(winrt::hstring, EnvironmentVariables);
+    HARDCODED_PROPERTY(winrt::Microsoft::Terminal::Control::ScrollbarState, ScrollState, winrt::Microsoft::Terminal::Control::ScrollbarState::Visible);
+    HARDCODED_PROPERTY(winrt::Microsoft::Terminal::Control::TextAntialiasingMode, AntialiasingMode, winrt::Microsoft::Terminal::Control::TextAntialiasingMode::Grayscale);
+    HARDCODED_PROPERTY(bool, RetroTerminalEffect, false);
+    HARDCODED_PROPERTY(bool, ForceFullRepaintRendering, false);
+    HARDCODED_PROPERTY(bool, SoftwareRendering, false);
+    HARDCODED_PROPERTY(bool, ForceVTInput, false);
+    HARDCODED_PROPERTY(winrt::hstring, PixelShaderPath);
+    HARDCODED_PROPERTY(bool, IntenseIsBright);
+    HARDCODED_PROPERTY(bool, IntenseIsBold);
+    HARDCODED_PROPERTY(bool, ShowMarks);
+    HARDCODED_PROPERTY(bool, UseBackgroundImageForWindow);
+    HARDCODED_PROPERTY(bool, AutoMarkPrompts);
+    HARDCODED_PROPERTY(bool, VtPassthrough);
+    HARDCODED_PROPERTY(winrt::hstring, ProfileSource, L"this property was a mistake");
+    HARDCODED_PROPERTY(bool, UseAtlasEngine, false);
+    HARDCODED_PROPERTY(AdjustTextMode, AdjustIndistinguishableColors, AdjustTextMode::Never);
+
+public:
+    void SetTheme(TerminalTheme theme, LPCWSTR fontFamily, til::CoordType fontSize, int newDpi)
+    {
+        _theme = theme;
+        _fontFace = fontFamily;
+        _fontSize = static_cast<float>(fontSize);
+    }
 
 private:
-    std::array<winrt::Microsoft::Terminal::Core::Color, 16> _ColorTable;
+    TerminalTheme _theme;
+    winrt::hstring _fontFace{ L"Cascadia Mono" };
+    float _fontSize = 12.0f;
 };
 
 struct HwndTerminal
 {
+    static constexpr LPCWSTR term_window_class = L"HwndTerminalClass";
+
     static LRESULT CALLBACK HwndTerminalWndProc(
         HWND hwnd,
         UINT uMsg,
@@ -204,20 +251,6 @@ struct HwndTerminal
         wc.lpszClassName = term_window_class;
 
         return RegisterClassW(&wc) != 0;
-    }
-
-    static MouseButtonState MouseButtonStateFromWParam(WPARAM wParam)
-    {
-        MouseButtonState state{};
-        WI_UpdateFlag(state, MouseButtonState::IsLeftButtonDown, WI_IsFlagSet(wParam, MK_LBUTTON));
-        WI_UpdateFlag(state, MouseButtonState::IsMiddleButtonDown, WI_IsFlagSet(wParam, MK_MBUTTON));
-        WI_UpdateFlag(state, MouseButtonState::IsRightButtonDown, WI_IsFlagSet(wParam, MK_RBUTTON));
-        return state;
-    }
-
-    static Point PointFromLParam(LPARAM lParam)
-    {
-        return { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
     }
 
     LRESULT WindowProc(
@@ -301,15 +334,16 @@ struct HwndTerminal
             SetWindowLongPtr(_hwnd.get(), GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         }
 
+        _settingsBridge = winrt::make_self<ThemeBasedTerminalSettings>();
         _connection = winrt::make_self<NullConnection>();
-        _interactivity = ControlInteractivity{ winrt::make<TerminalSettings>(), nullptr, *_connection };
+        _interactivity = ControlInteractivity{ *_settingsBridge, nullptr, *_connection };
         _core = _interactivity.Core();
+
+        _core.ScrollPositionChanged({ this, &HwndTerminal::_scrollPositionChanged });
+        _interactivity.ScrollPositionChanged({ this, &HwndTerminal::_scrollPositionChanged });
     }
 
-    winrt::com_ptr<NullConnection> _connection;
-    ControlInteractivity _interactivity{ nullptr };
-    ControlCore _core{ nullptr };
-
+    /*( PUBLIC API )*/
     HRESULT SendOutput(LPCWSTR data)
     try
     {
@@ -317,29 +351,82 @@ struct HwndTerminal
         return S_OK;
     }
     CATCH_RETURN()
-    bool _initialized{ false };
 
-    HRESULT RegisterScrollCallback(PSCROLLCB callback) { return S_OK; }
+    HRESULT RegisterScrollCallback(PSCROLLCB callback)
+    {
+        _scrollCallback = callback;
+        return S_OK;
+    }
+
     HRESULT TriggerResize(_In_ til::CoordType width, _In_ til::CoordType height, _Out_ til::size* dimensions)
     {
         if (!_initialized)
             return S_FALSE;
         SetWindowPos(_hwnd.get(), nullptr, 0, 0, width, height, 0);
         _core.SizeChanged(width, height);
+
+        // TODO(DH): ControlCore has no API that returns the new size in cells
+        //wil::assign_to_opt_param(dimensions, /*thing*/);
+
         return S_OK;
     }
-    HRESULT TriggerResizeWithDimension(_In_ til::size dimensions, _Out_ SIZE* dimensionsInPixels) { return S_OK; }
-    HRESULT CalculateResize(_In_ til::CoordType width, _In_ til::CoordType height, _Out_ til::size* dimensions) { return S_OK; }
+
+    HRESULT TriggerResizeWithDimension(_In_ til::size dimensions, _Out_ til::size* dimensionsInPixels)
+    {
+        // TODO(DH): ControlCore has no API that resizes to a specific cell dimension
+        // TODO(DH): ControlCore has no API that returns the new size in pixels
+        //wil::assign_to_opt_param(dimensionsInPixels, /*thing*/);
+        return S_FALSE;
+    }
+    HRESULT CalculateResize(_In_ til::CoordType width, _In_ til::CoordType height, _Out_ til::size* dimensions)
+    {
+        // TODO(DH): It seems weird to have to do this manually.
+        auto fontSizeInPx = _core.FontSize();
+        wil::assign_to_opt_param(dimensions, til::size{
+                                                 static_cast<til::CoordType>(width / fontSizeInPx.Width),
+                                                 static_cast<til::CoordType>(height / fontSizeInPx.Height),
+                                             });
+        return S_OK;
+    }
     HRESULT DpiChanged(int newDpi)
     {
         _core.ScaleChanged((double)newDpi / 96.0);
         return S_OK;
     }
-    HRESULT UserScroll(int viewTop) { return S_OK; }
-    HRESULT ClearSelection() { return S_OK; }
-    HRESULT GetSelection(const wchar_t** out) { return S_OK; }
-    HRESULT IsSelectionActive(bool* out) { return _core.HasSelection(); }
-    HRESULT SetTheme(TerminalTheme theme, LPCWSTR fontFamily, til::CoordType fontSize, int newDpi) { return S_OK; }
+    HRESULT UserScroll(int viewTop)
+    {
+        _interactivity.UpdateScrollbar(viewTop);
+        return S_OK;
+    }
+    HRESULT ClearSelection()
+    {
+        _core.ClearSelection();
+        return S_OK;
+    }
+    HRESULT GetSelection(const wchar_t** out)
+    {
+        auto strings = _core.SelectedText(true);
+        auto concatenated = std::accumulate(std::begin(strings), std::end(strings), std::wstring{}, [](auto&& l, auto&& r) {
+            return l + r;
+        });
+        auto returnText = wil::make_cotaskmem_string_nothrow(concatenated.c_str());
+        *out = returnText.release();
+        return S_OK;
+    }
+    HRESULT IsSelectionActive(bool* out)
+    {
+        *out = _core.HasSelection();
+        return S_OK;
+    }
+
+    HRESULT SetTheme(TerminalTheme theme, LPCWSTR fontFamily, til::CoordType fontSize, int newDpi)
+    {
+        _settingsBridge->SetTheme(theme, fontFamily, fontSize, newDpi);
+        _core.UpdateSettings(*_settingsBridge, nullptr);
+        _interactivity.UpdateSettings();
+        return S_OK;
+    }
+
     HRESULT RegisterWriteCallback(PWRITECB callback)
     {
         _connection->_pfnWriteCallback = callback;
@@ -360,6 +447,7 @@ struct HwndTerminal
         _core.CursorOn(!_core.CursorOn());
         return S_OK;
     }
+
     HRESULT SetCursorVisible(const bool visible)
     {
         _core.CursorOn(visible);
@@ -380,6 +468,20 @@ struct HwndTerminal
     }
 
 private:
+    winrt::com_ptr<NullConnection> _connection;
+    winrt::com_ptr<ThemeBasedTerminalSettings> _settingsBridge;
+    ControlInteractivity _interactivity{ nullptr };
+    ControlCore _core{ nullptr };
+    bool _initialized{ false };
+    PSCROLLCB _scrollCallback{};
+
+    void _scrollPositionChanged(const winrt::Windows::Foundation::IInspectable& i, const ScrollPositionChangedArgs& update)
+    {
+        if (_scrollCallback)
+        {
+            _scrollCallback(update.ViewTop(), update.ViewHeight(), update.BufferSize());
+        }
+    }
 };
 
 __declspec(dllexport) HRESULT _stdcall CreateTerminal(HWND parentHwnd, _Out_ void** hwnd, _Out_ PTERM* terminal)
@@ -400,29 +502,39 @@ __declspec(dllexport) void _stdcall DestroyTerminal(PTERM terminal)
 #define API_NAME(name) Terminal##name
 #define GENERATOR_0(name)                                                 \
     __declspec(dllexport) HRESULT _stdcall API_NAME(name)(PTERM terminal) \
+    try                                                                   \
     {                                                                     \
         return ((HwndTerminal*)(terminal))->name();                       \
-    }
+    }                                                                     \
+    CATCH_RETURN()
 #define GENERATOR_1(name, t1, a1)                                                \
     __declspec(dllexport) HRESULT _stdcall API_NAME(name)(PTERM terminal, t1 a1) \
+    try                                                                          \
     {                                                                            \
         return ((HwndTerminal*)(terminal))->name(a1);                            \
-    }
+    }                                                                            \
+    CATCH_RETURN()
 #define GENERATOR_2(name, t1, a1, t2, a2)                                               \
     __declspec(dllexport) HRESULT _stdcall API_NAME(name)(PTERM terminal, t1 a1, t2 a2) \
+    try                                                                                 \
     {                                                                                   \
         return ((HwndTerminal*)(terminal))->name(a1, a2);                               \
-    }
+    }                                                                                   \
+    CATCH_RETURN()
 #define GENERATOR_3(name, t1, a1, t2, a2, t3, a3)                                              \
     __declspec(dllexport) HRESULT _stdcall API_NAME(name)(PTERM terminal, t1 a1, t2 a2, t3 a3) \
+    try                                                                                        \
     {                                                                                          \
         return ((HwndTerminal*)(terminal))->name(a1, a2, a3);                                  \
-    }
+    }                                                                                          \
+    CATCH_RETURN()
 #define GENERATOR_4(name, t1, a1, t2, a2, t3, a3, t4, a4)                                             \
     __declspec(dllexport) HRESULT _stdcall API_NAME(name)(PTERM terminal, t1 a1, t2 a2, t3 a3, t4 a4) \
+    try                                                                                               \
     {                                                                                                 \
         return ((HwndTerminal*)(terminal))->name(a1, a2, a3, a4);                                     \
-    }
+    }                                                                                                 \
+    CATCH_RETURN()
 #define GENERATOR_N(name, t1, a1, t2, a2, t3, a3, t4, a4, MACRO, ...) MACRO
 #define GENERATOR(...)                                                                                                                            \
     GENERATOR_N(__VA_ARGS__, GENERATOR_4, GENERATOR_4, GENERATOR_3, GENERATOR_3, GENERATOR_2, GENERATOR_2, GENERATOR_1, GENERATOR_1, GENERATOR_0) \

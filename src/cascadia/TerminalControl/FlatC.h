@@ -3,17 +3,6 @@
 
 #pragma once
 
-/*
-#include "../../renderer/base/Renderer.hpp"
-#include "../../renderer/dx/DxRenderer.hpp"
-#include "../../cascadia/TerminalCore/Terminal.hpp"
-#include <UIAutomationCore.h>
-#include "../../types/IControlAccessibilityInfo.h"
-#include "../../types/TermControlUiaProvider.hpp"
-*/
-
-//using namespace Microsoft::Console::VirtualTerminal;
-
 // Keep in sync with TerminalTheme.cs
 typedef struct _TerminalTheme
 {
@@ -29,23 +18,24 @@ using PTERM = void*;
 using PSCROLLCB = void(_stdcall*)(int, int, int);
 using PWRITECB = void(_stdcall*)(const wchar_t*);
 
-#define TERMINAL_API_TABLE(XX)                                                              \
-    XX(SendOutput, LPCWSTR, data)                                                           \
-    XX(RegisterScrollCallback, PSCROLLCB, callback)                                         \
-    XX(TriggerResize, _In_ til::CoordType, width, _In_ til::CoordType, height, _Out_ til::size*, dimensions)      \
-    XX(TriggerResizeWithDimension, _In_ til::size, dimensions, _Out_ SIZE*, dimensionsInPixels) \
-    XX(CalculateResize, _In_ til::CoordType, width, _In_ til::CoordType, height, _Out_ til::size*, dimensions)    \
-    XX(DpiChanged, int, newDpi)                                                             \
-    XX(UserScroll, int, viewTop)                                                            \
-    XX(ClearSelection)                                                                      \
-    XX(GetSelection, const wchar_t**, out)                                                  \
-    XX(IsSelectionActive, bool*, out)                                                       \
-    XX(SetTheme, TerminalTheme, theme, LPCWSTR, fontFamily, til::CoordType, fontSize, int, newDpi)   \
-    XX(RegisterWriteCallback, PWRITECB, callback)                                           \
-    XX(SendKeyEvent, WORD, vkey, WORD, scanCode, WORD, flags, bool, keyDown)                \
-    XX(SendCharEvent, wchar_t, ch, WORD, flags, WORD, scanCode)                             \
-    XX(BlinkCursor)                                                                         \
+#define TERMINAL_API_TABLE(XX)                                                                                 \
+    XX(SendOutput, LPCWSTR, data)                                                                              \
+    XX(RegisterScrollCallback, PSCROLLCB, callback)                                                            \
+    XX(TriggerResize, _In_ til::CoordType, width, _In_ til::CoordType, height, _Out_ til::size*, dimensions)   \
+    XX(TriggerResizeWithDimension, _In_ til::size, dimensions, _Out_ til::size*, dimensionsInPixels)           \
+    XX(CalculateResize, _In_ til::CoordType, width, _In_ til::CoordType, height, _Out_ til::size*, dimensions) \
+    XX(DpiChanged, int, newDpi)                                                                                \
+    XX(UserScroll, int, viewTop)                                                                               \
+    XX(GetSelection, const wchar_t**, out)                                                                     \
+    XX(IsSelectionActive, bool*, out)                                                                          \
+    XX(SetTheme, TerminalTheme, theme, LPCWSTR, fontFamily, til::CoordType, fontSize, int, newDpi)             \
+    XX(RegisterWriteCallback, PWRITECB, callback)                                                              \
+    XX(SendKeyEvent, WORD, vkey, WORD, scanCode, WORD, flags, bool, keyDown)                                   \
+    XX(SendCharEvent, wchar_t, ch, WORD, flags, WORD, scanCode)                                                \
+    XX(BlinkCursor)                                                                                            \
     XX(SetCursorVisible, const bool, visible)
+
+//XX(ClearSelection)                                                                      \
 
 extern "C" {
 #define API_NAME(name) Terminal##name

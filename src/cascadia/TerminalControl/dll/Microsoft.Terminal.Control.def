@@ -10,7 +10,6 @@ TerminalTriggerResizeWithDimension
 TerminalCalculateResize
 TerminalDpiChanged
 TerminalUserScroll
-TerminalClearSelection
 TerminalGetSelection
 TerminalIsSelectionActive
 TerminalSetTheme
