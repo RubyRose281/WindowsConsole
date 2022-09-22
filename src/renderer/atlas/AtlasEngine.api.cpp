@@ -686,6 +686,7 @@ void AtlasEngine::_resolveFontMetrics(const wchar_t* requestedFaceName, const Fo
     if (fontMetrics)
     {
         std::wstring fontName{ requestedFaceName };
+        const auto baselineU16 = gsl::narrow_cast<u16>(baseline);
         const auto fontWeightU16 = gsl::narrow_cast<u16>(requestedWeight);
         const auto underlinePosU16 = gsl::narrow_cast<u16>(underlinePos);
         const auto underlineWidthU16 = gsl::narrow_cast<u16>(underlineWidth);
@@ -701,8 +702,9 @@ void AtlasEngine::_resolveFontMetrics(const wchar_t* requestedFaceName, const Fo
         fontMetrics->fontCollection = std::move(fontCollection);
         fontMetrics->fontName = std::move(fontName);
         fontMetrics->fontSizeInDIP = fontSizeInDIP;
-        fontMetrics->baselineInDIP = baseline / static_cast<float>(_api.dpi) * 96.0f;
         fontMetrics->advanceScale = cellWidth / advanceWidth;
+        fontMetrics->baselineInDIP = baseline / static_cast<f32>(_api.dpi) * 96.0f;
+        fontMetrics->baseline = baselineU16;
         fontMetrics->cellSize = { cellWidth, cellHeight };
         fontMetrics->fontWeight = fontWeightU16;
         fontMetrics->underlinePos = underlinePosU16;
