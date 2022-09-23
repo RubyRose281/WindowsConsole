@@ -17,6 +17,7 @@
 // The _api fields on the other hand are concurrently written to by others.
 
 #pragma warning(disable : 4100) // '...': unreferenced formal parameter
+#pragma warning(disable : 4127)
 // Disable a bunch of warnings which get in the way of writing performant code.
 #pragma warning(disable : 26429) // Symbol 'data' is never tested for nullness, it can be marked as not_null (f.23).
 #pragma warning(disable : 26446) // Prefer to use gsl::at() instead of unchecked subscript operator (bounds.4).
@@ -254,6 +255,22 @@ try
             THROW_IF_FAILED(_r.d2dRenderTarget->CreateSolidColorBrush(&color, nullptr, _r.brush.put()));
             _r.brushColor = 0xffffffff;
         }
+
+        switch (_api.realizedAntialiasingMode)
+        {
+        case D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE:
+            _r.textPixelShader = _r.cleartypePixelShader;
+            _r.textBlendState = _r.cleartypeBlendState;
+            break;
+        case D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE:
+            _r.textPixelShader = _r.grayscalePixelShader;
+            _r.textBlendState = _r.alphaBlendState;
+            break;
+        default:
+            _r.textPixelShader = _r.passthroughPixelShader;
+            _r.textBlendState = _r.alphaBlendState;
+            break;
+        }
     }
 
     {
@@ -267,61 +284,7 @@ try
                 const auto [it, ok] = _r.glyphCache.try_emplace(placement.key);
                 if (ok)
                 {
-                    while (true)
-                    {
-                        DWRITE_GLYPH_RUN glyphRun;
-                        glyphRun.fontFace = placement.key.fontFace.get();
-                        glyphRun.fontEmSize = _r.fontMetrics.fontSizeInDIP;
-                        glyphRun.glyphCount = gsl::narrow_cast<UINT32>(placement.key.glyphs.size());
-                        glyphRun.glyphIndices = placement.key.glyphs.data();
-                        glyphRun.glyphAdvances = nullptr;
-                        glyphRun.glyphOffsets = nullptr;
-                        glyphRun.isSideways = FALSE;
-                        glyphRun.bidiLevel = 0;
-
-                        auto box = getGlyphRunBlackBox(glyphRun, 0, 0);
-                        if (box.left >= box.right || box.top >= box.bottom)
-                        {
-                            break;
-                        }
-
-                        stbrp_rect rect{};
-                        rect.w = gsl::narrow_cast<int>(roundf((box.right - box.left) * _r.pixelPerDIP));
-                        rect.h = gsl::narrow_cast<int>(roundf((box.bottom - box.top) * _r.pixelPerDIP));
-                        if (!stbrp_pack_rects(&_r.rectPacker, &rect, 1))
-                        {
-                            __debugbreak();
-                            break;
-                        }
-
-                        const f32x2 offset{
-                            roundf(box.left * _r.pixelPerDIP),
-                            roundf(box.top * _r.pixelPerDIP),
-                        };
-                        const D2D1_POINT_2F baseline{
-                            (rect.x - offset.x) * _r.dipPerPixel,
-                            (rect.y - offset.y) * _r.dipPerPixel,
-                        };
-
-                        // My understanding is that a ID2D1DeviceContext4 implies the existence of a IDWriteFactory5, because only
-                        // IDWriteFactory5 has a CreateDevice() for ID2D1Device4 with which a ID2D1DeviceContext4 can be created.
-                        if (const auto d2dRenderTarget4 = _r.d2dRenderTarget.query<ID2D1DeviceContext4>())
-                        {
-                            const auto factory4 = _sr.dwriteFactory.query<IDWriteFactory4>();
-                            drawGlyphRun(factory4.get(), d2dRenderTarget4.get(), baseline, &glyphRun, _r.brush.get());
-                        }
-                        else
-                        {
-                            _r.d2dRenderTarget->DrawGlyphRun(baseline, &glyphRun, _r.brush.get(), DWRITE_MEASURING_MODE_NATURAL);
-                        }
-
-                        it->second.uv.x = static_cast<f32>(rect.x);
-                        it->second.uv.y = static_cast<f32>(rect.y);
-                        it->second.wh.x = static_cast<f32>(rect.w);
-                        it->second.wh.y = static_cast<f32>(rect.h);
-                        it->second.offset = offset;
-                        break;
-                    }
+                    _drawGlyphs(it->first, it->second);
                 }
 
                 if (it->second.wh != f32x2{})
@@ -329,10 +292,10 @@ try
                     static constexpr f32x2 vertices[]{
                         { 0, 0 },
                         { 1, 0 },
-                        { 0, 1 },
+                        { 1, 1 },
                         { 1, 1 },
                         { 0, 1 },
-                        { 1, 0 },
+                        { 0, 0 },
                     };
 
                     for (const auto& v : vertices)
@@ -344,8 +307,8 @@ try
                         // TODO: matrix transform in the vertex shader
                         ref.position.x = ref.position.x * (2.0f / _api.sizeInPixel.x) - 1.0f;
                         ref.position.y = ref.position.y * (-2.0f / _api.sizeInPixel.y) + 1.0f;
-                        ref.texcoord.x = vv.uv.x + v.x * vv.wh.x;
-                        ref.texcoord.y = vv.uv.y + v.y * vv.wh.y;
+                        ref.texcoord.x = vv.xy.x + v.x * vv.wh.x;
+                        ref.texcoord.y = vv.xy.y + v.y * vv.wh.y;
                         ref.color = placement.color;
                     }
                 }
@@ -364,7 +327,8 @@ try
     {
         ConstBuffer data;
         DWrite_GetGammaRatios(_r.gamma, data.gammaRatios);
-        data.enhancedContrast = _r.grayscaleEnhancedContrast;
+        data.cleartypeEnhancedContrast = _r.cleartypeEnhancedContrast;
+        data.grayscaleEnhancedContrast = _r.grayscaleEnhancedContrast;
 #pragma warning(suppress : 26447) // The function is declared 'noexcept' but calls function '...' which may throw exceptions (f.6).
         _r.deviceContext->UpdateSubresource(_r.constantBuffer.get(), 0, nullptr, &data, 0, 0);
         WI_ClearFlag(_r.invalidations, RenderInvalidations::ConstBuffer);
@@ -402,7 +366,7 @@ try
         _r.deviceContext->RSSetState(nullptr);
 
         // PS: Pixel Shader
-        _r.deviceContext->PSSetShader(_r.pixelShader.get(), nullptr, 0);
+        _r.deviceContext->PSSetShader(_r.textPixelShader.get(), nullptr, 0);
         _r.deviceContext->PSSetShaderResources(0, 1, _r.atlasView.addressof());
         _r.deviceContext->PSSetConstantBuffers(0, 1, _r.constantBuffer.addressof());
 
@@ -417,10 +381,11 @@ try
     {
         _r.deviceContext->RSSetState(_r.wireframeRasterizerState.get());
         _r.deviceContext->PSSetShader(_r.wireframePixelShader.get(), nullptr, 0);
+        _r.deviceContext->OMSetBlendState(_r.alphaBlendState.get(), nullptr, 0xffffffff);
         _r.deviceContext->Draw(gsl::narrow_cast<UINT>(_r.vertexData.size()), 0);
     }
 
-    if (_r.dirtyRect != fullRect)
+    if (false && _r.dirtyRect != fullRect)
     {
         auto dirtyRectInPx = _r.dirtyRect;
         dirtyRectInPx.left *= _r.fontMetrics.cellSize.x;
@@ -501,3 +466,63 @@ void AtlasEngine::WaitUntilCanRender() noexcept
 }
 
 #pragma endregion
+
+void AtlasEngine::_drawGlyphs(const AtlasKey& key, AtlasValue& value)
+{
+    DWRITE_GLYPH_RUN glyphRun;
+    glyphRun.fontFace = key.fontFace.get();
+    glyphRun.fontEmSize = _r.fontMetrics.fontSizeInDIP;
+    glyphRun.glyphCount = gsl::narrow_cast<UINT32>(key.glyphs.size());
+    glyphRun.glyphIndices = key.glyphs.data();
+    glyphRun.glyphAdvances = nullptr;
+    glyphRun.glyphOffsets = nullptr;
+    glyphRun.isSideways = FALSE;
+    glyphRun.bidiLevel = 0;
+
+    auto box = getGlyphRunBlackBox(glyphRun, 0, 0);
+    if (box.left >= box.right || box.top >= box.bottom)
+    {
+        return;
+    }
+
+    box.left = roundf(box.left * _r.pixelPerDIP) - 1.0f;
+    box.top = roundf(box.top * _r.pixelPerDIP) - 1.0f;
+    box.right = roundf(box.right * _r.pixelPerDIP) + 1.0f;
+    box.bottom = roundf(box.bottom * _r.pixelPerDIP) + 1.0f;
+
+    stbrp_rect rect{};
+    rect.w = gsl::narrow_cast<int>(box.right - box.left);
+    rect.h = gsl::narrow_cast<int>(box.bottom - box.top);
+    if (!stbrp_pack_rects(&_r.rectPacker, &rect, 1))
+    {
+        __debugbreak();
+        return;
+    }
+
+    const f32x2 offset{
+        box.left,
+        box.top,
+    };
+    const D2D1_POINT_2F baseline{
+        (rect.x - offset.x) * _r.dipPerPixel,
+        (rect.y - offset.y) * _r.dipPerPixel,
+    };
+
+    // My understanding is that a ID2D1DeviceContext4 implies the existence of a IDWriteFactory5, because only
+    // IDWriteFactory5 has a CreateDevice() for ID2D1Device4 with which a ID2D1DeviceContext4 can be created.
+    if (const auto d2dRenderTarget4 = _r.d2dRenderTarget.query<ID2D1DeviceContext4>())
+    {
+        const auto factory4 = _sr.dwriteFactory.query<IDWriteFactory4>();
+        drawGlyphRun(factory4.get(), d2dRenderTarget4.get(), baseline, &glyphRun, _r.brush.get());
+    }
+    else
+    {
+        _r.d2dRenderTarget->DrawGlyphRun(baseline, &glyphRun, _r.brush.get(), DWRITE_MEASURING_MODE_NATURAL);
+    }
+
+    value.xy.x = static_cast<f32>(rect.x);
+    value.xy.y = static_cast<f32>(rect.y);
+    value.wh.x = static_cast<f32>(rect.w);
+    value.wh.y = static_cast<f32>(rect.h);
+    value.offset = offset;
+}

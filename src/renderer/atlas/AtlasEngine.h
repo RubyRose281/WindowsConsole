@@ -511,7 +511,8 @@ namespace Microsoft::Console::Render
             // * bool will probably not work the way you want it to,
             //   because HLSL uses 32-bit bools and C++ doesn't.
             alignas(sizeof(f32x4)) f32 gammaRatios[4]{};
-            alignas(sizeof(f32)) f32 enhancedContrast = 0;
+            alignas(sizeof(f32)) f32 cleartypeEnhancedContrast = 0;
+            alignas(sizeof(f32)) f32 grayscaleEnhancedContrast = 0;
 #pragma warning(suppress : 4324) // 'ConstBuffer': structure was padded due to alignment specifier
         };
 
@@ -546,6 +547,49 @@ namespace Microsoft::Console::Render
             ConstBuffer = 1 << 1,
         };
         ATLAS_FLAG_OPS(RenderInvalidations, u8)
+            
+        struct AtlasKey
+        {
+            wil::com_ptr<IDWriteFontFace> fontFace; // ActiveFaceCache
+            til::small_vector<u16, 4> glyphs;
+
+            bool operator==(const AtlasKey& other) const noexcept
+            {
+                return fontFace == other.fontFace && glyphs == other.glyphs;
+            }
+        };
+
+        struct AtlasKeyHasher
+        {
+            size_t operator()(const AtlasKey& v) const noexcept
+            {
+                til::hasher h;
+                h.write(v.fontFace.get());
+                h.write(v.glyphs.data(), v.glyphs.size());
+                return h.finalize();
+            }
+        };
+
+        struct AtlasValue
+        {
+            f32x2 xy;
+            f32x2 wh;
+            f32x2 offset;
+        };
+
+        struct GlyphPlacement
+        {
+            AtlasKey key;
+            u16x2 baseline;
+            u32 color = 0;
+        };
+
+        struct VertexData
+        {
+            f32x2 position;
+            f32x2 texcoord;
+            u32 color;
+        };
 
         // MSVC STL (version 22000) implements std::clamp<T>(T, T, T) in terms of the generic
         // std::clamp<T, Predicate>(T, T, T, Predicate) with std::less{} as the argument,
@@ -575,6 +619,7 @@ namespace Microsoft::Console::Render
         void _resolveFontMetrics(const wchar_t* faceName, const FontInfoDesired& fontInfoDesired, FontInfo& fontInfo, FontMetrics* fontMetrics = nullptr) const;
 
         // AtlasEngine.r.cpp
+        void _drawGlyphs(const AtlasKey& key, AtlasValue& value);
 
         static constexpr bool debugForceD2DMode = false;
         static constexpr bool debugGlyphGenerationPerformance = false;
@@ -588,49 +633,6 @@ namespace Microsoft::Console::Render
         static constexpr u16r invalidatedAreaNone = { u16max, u16max, u16min, u16min };
         static constexpr u16x2 invalidatedRowsNone{ u16max, u16min };
         static constexpr u16x2 invalidatedRowsAll{ u16min, u16max };
-
-        struct AtlasKey
-        {
-            wil::com_ptr<IDWriteFontFace> fontFace; // ActiveFaceCache
-            til::small_vector<u16, 4> glyphs;
-
-            bool operator==(const AtlasKey& other) const noexcept
-            {
-                return fontFace == other.fontFace && glyphs == other.glyphs;
-            }
-        };
-
-        struct AtlasKeyHasher
-        {
-            size_t operator()(const AtlasKey& v) const noexcept
-            {
-                til::hasher h;
-                h.write(v.fontFace.get());
-                h.write(v.glyphs.data(), v.glyphs.size());
-                return h.finalize();
-            }
-        };
-
-        struct AtlasValue
-        {
-            f32x2 uv;
-            f32x2 wh;
-            f32x2 offset;
-        };
-
-        struct GlyphPlacement
-        {
-            AtlasKey key;
-            u16x2 baseline;
-            u32 color = 0;
-        };
-
-        struct VertexData
-        {
-            f32x2 position;
-            f32x2 texcoord;
-            u32 color;
-        };
 
         struct StaticResources
         {
@@ -660,14 +662,20 @@ namespace Microsoft::Console::Render
             wil::com_ptr<ID3D11RenderTargetView> renderTargetView;
 
             wil::com_ptr<ID3D11VertexShader> vertexShader;
-            wil::com_ptr<ID3D11PixelShader> pixelShader;
+            wil::com_ptr<ID3D11PixelShader> cleartypePixelShader;
+            wil::com_ptr<ID3D11PixelShader> grayscalePixelShader;
+            wil::com_ptr<ID3D11PixelShader> passthroughPixelShader;
+            wil::com_ptr<ID3D11BlendState> cleartypeBlendState;
+            wil::com_ptr<ID3D11BlendState> alphaBlendState;
+            
+            wil::com_ptr<ID3D11PixelShader> textPixelShader;
+            wil::com_ptr<ID3D11BlendState> textBlendState;
 
             wil::com_ptr<ID3D11PixelShader> wireframePixelShader;
             wil::com_ptr<ID3D11RasterizerState> wireframeRasterizerState;
 
             wil::com_ptr<ID3D11Buffer> constantBuffer;
             wil::com_ptr<ID3D11InputLayout> textInputLayout;
-            wil::com_ptr<ID3D11BlendState> textBlendState;
             wil::com_ptr<ID3D11Buffer> vertexBuffer;
 
             wil::com_ptr<ID3D11Texture2D> customOffscreenTexture;
@@ -774,8 +782,8 @@ namespace Microsoft::Console::Render
             wil::unique_handle swapChainHandle;
             HWND hwnd = nullptr;
             u16 dpi = USER_DEFAULT_SCREEN_DPI; // changes are flagged as ApiInvalidations::Font|Size
-            u8 antialiasingMode = D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE; // changes are flagged as ApiInvalidations::Font
-            u8 realizedAntialiasingMode = D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE; // caches antialiasingMode, depends on antialiasingMode and backgroundOpaqueMixin, see _resolveTransparencySettings
+            u8 antialiasingMode = D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE; // changes are flagged as ApiInvalidations::Font
+            u8 realizedAntialiasingMode = D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE; // caches antialiasingMode, depends on antialiasingMode and backgroundOpaqueMixin, see _resolveTransparencySettings
             bool enableTransparentBackground = false;
 
             std::wstring customPixelShaderPath; // changes are flagged as ApiInvalidations::Device

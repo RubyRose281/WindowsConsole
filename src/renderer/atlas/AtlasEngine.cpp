@@ -6,7 +6,9 @@
 
 #include <custom_shader_ps.h>
 #include <custom_shader_vs.h>
-#include <shader_text_ps.h>
+#include <shader_text_cleartype_ps.h>
+#include <shader_text_grayscale_ps.h>
+#include <shader_passthrough_ps.h>
 #include <shader_wireframe.h>
 #include <shader_vs.h>
 
@@ -150,11 +152,11 @@ try
                 return blob;
             };
 
-            const auto vs = compile(_sr.sourceDirectory / L"shader_vs.hlsl", "vs_4_1");
-            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "ps_4_1");
+            const auto vs = compile(_sr.sourceDirectory / L"shader_vs.hlsl", "vs_4_0");
+            const auto ps = compile(_sr.sourceDirectory / L"shader_ps.hlsl", "ps_4_0");
 
             THROW_IF_FAILED(_r.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, _r.vertexShader.put()));
-            THROW_IF_FAILED(_r.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.pixelShader.put()));
+            THROW_IF_FAILED(_r.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, _r.cleartypePixelShader.put()));
         }
         CATCH_LOG()
     }
@@ -622,8 +624,38 @@ void AtlasEngine::_createResources()
         }
 
         THROW_IF_FAILED(_r.device->CreateVertexShader(&shader_vs[0], sizeof(shader_vs), nullptr, _r.vertexShader.put()));
-        THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_text_ps[0], sizeof(shader_text_ps), nullptr, _r.pixelShader.put()));
+        THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_text_cleartype_ps[0], sizeof(shader_text_cleartype_ps), nullptr, _r.cleartypePixelShader.put()));
+        THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_text_grayscale_ps[0], sizeof(shader_text_grayscale_ps), nullptr, _r.grayscalePixelShader.put()));
+        THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_passthrough_ps[0], sizeof(shader_passthrough_ps), nullptr, _r.passthroughPixelShader.put()));
         THROW_IF_FAILED(_r.device->CreatePixelShader(&shader_wireframe[0], sizeof(shader_wireframe), nullptr, _r.wireframePixelShader.put()));
+
+        {
+            static constexpr D3D11_RENDER_TARGET_BLEND_DESC alphaBlending{
+                .BlendEnable = true,
+                .SrcBlend = D3D11_BLEND_ONE,
+                .DestBlend = D3D11_BLEND_INV_SRC_ALPHA,
+                .BlendOp = D3D11_BLEND_OP_ADD,
+                .SrcBlendAlpha = D3D11_BLEND_ONE,
+                .DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA,
+                .BlendOpAlpha = D3D11_BLEND_OP_ADD,
+                .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
+            };
+            static constexpr D3D11_RENDER_TARGET_BLEND_DESC cleartypeBlending{
+                .BlendEnable = true,
+                .SrcBlend = D3D11_BLEND_SRC1_COLOR,
+                .DestBlend = D3D11_BLEND_INV_SRC1_COLOR,
+                .BlendOp = D3D11_BLEND_OP_ADD,
+                .SrcBlendAlpha = D3D11_BLEND_ONE,
+                .DestBlendAlpha = D3D11_BLEND_ZERO,
+                .BlendOpAlpha = D3D11_BLEND_OP_ADD,
+                .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
+            };
+            D3D11_BLEND_DESC desc{};
+            desc.RenderTarget[0] = cleartypeBlending;
+            THROW_IF_FAILED(_r.device->CreateBlendState(&desc, _r.cleartypeBlendState.put()));
+            desc.RenderTarget[0] = alphaBlending;
+            THROW_IF_FAILED(_r.device->CreateBlendState(&desc, _r.alphaBlendState.put()));
+        }
 
         {
             D3D11_RASTERIZER_DESC desc{};
@@ -640,19 +672,6 @@ void AtlasEngine::_createResources()
                 { "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, offsetof(VertexData, color), D3D11_INPUT_PER_VERTEX_DATA, 0 },
             };
             THROW_IF_FAILED(_r.device->CreateInputLayout(&layout[0], gsl::narrow_cast<UINT>(std::size(layout)), &shader_vs[0], sizeof(shader_vs), _r.textInputLayout.put()));
-        }
-
-        {
-            D3D11_BLEND_DESC desc{};
-            desc.RenderTarget[0].BlendEnable = true;
-            desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-            desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-            desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-            desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-            desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-            desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-            desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-            THROW_IF_FAILED(_r.device->CreateBlendState(&desc, _r.textBlendState.put()));
         }
 
         if (!_api.customPixelShaderPath.empty())

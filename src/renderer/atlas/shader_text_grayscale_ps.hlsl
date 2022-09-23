@@ -6,6 +6,7 @@
 cbuffer ConstBuffer : register(b0)
 {
     float4 gammaRatios;
+    float cleartypeEnhancedContrast;
     float grayscaleEnhancedContrast;
 };
 
